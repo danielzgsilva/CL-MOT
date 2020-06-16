@@ -1,0 +1,5 @@
+# ninja log v5
+0	3387	1591905850355492800	/home/danielzgsilva/Documents/FairMOT/src/lib/models/networks/DCNv2_new/build/temp.linux-x86_64-3.7/home/danielzgsilva/Documents/FairMOT/src/lib/models/networks/DCNv2_new/src/cpu/dcn_v2_im2col_cpu.o	d12039f86389dd42
+0	4922	1591905851887438483	/home/danielzgsilva/Documents/FairMOT/src/lib/models/networks/DCNv2_new/build/temp.linux-x86_64-3.7/home/danielzgsilva/Documents/FairMOT/src/lib/models/networks/DCNv2_new/src/cpu/dcn_v2_cpu.o	46c7b5efda5be63f
+0	5195	1591905852159428849	/home/danielzgsilva/Documents/FairMOT/src/lib/models/networks/DCNv2_new/build/temp.linux-x86_64-3.7/home/danielzgsilva/Documents/FairMOT/src/lib/models/networks/DCNv2_new/src/cpu/dcn_v2_psroi_pooling_cpu.o	99399d8794c3ddd7
+0	12160	1591905859123183169	/home/danielzgsilva/Documents/FairMOT/src/lib/models/networks/DCNv2_new/build/temp.linux-x86_64-3.7/home/danielzgsilva/Documents/FairMOT/src/lib/models/networks/DCNv2_new/src/vision.o	1265ed74036bca6a

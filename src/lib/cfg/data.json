@@ -1,0 +1,19 @@
+{
+    "root":"/data/MOT/",
+    "train":
+    {
+        "caltech":"./data/caltech.train",
+        "citypersons":"./data/citypersons.train",
+        "cuhksysu":"./data/cuhksysu.train",
+        "prw":"./data/prw.train",
+        "eth":"./data/eth.train"
+    },
+    "test_emb":
+    {
+        "mot15":"./data/mot15.val"
+    },
+    "test":
+    {
+        "mot15":"./data/mot15.val"
+    }
+}
