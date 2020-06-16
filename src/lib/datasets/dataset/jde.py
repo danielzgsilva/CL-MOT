@@ -447,12 +447,14 @@ class JointDataset(LoadImagesAndLabels):  # for training
         img_path = self.img_files[ds][files_index - start_index]
         label_path = self.label_files[ds][files_index - start_index]
 
-        # ENDED HERE YESTERDAY - GET DATA RETURNS FLIPPED IMAGE - CONTINUE FROM HERE
         if self.unsup:
+            # Load image, flipped image, and ground truth detections for self-supervised learning
             img, labels, img_path, (input_h, input_w), flipped = self.get_data(img_path, label_path, unsup=True)
         else:
+            # Load image with ground truth detections and object IDs for supervised learning
             img, labels, img_path, (input_h, input_w), _ = self.get_data(img_path, label_path)
 
+        # Offset object IDs with starting ID index for this dataset
         for i, _ in enumerate(labels):
             if labels[i, 1] > -1:
                 labels[i, 1] += self.tid_start_index[ds]
@@ -461,6 +463,7 @@ class JointDataset(LoadImagesAndLabels):  # for training
         output_w = img.shape[2] // self.opt.down_ratio
         num_classes = self.num_classes
         num_objs = labels.shape[0]
+
         hm = np.zeros((num_classes, output_h, output_w), dtype=np.float32)
         wh = np.zeros((self.max_objs, 2), dtype=np.float32)
         reg = np.zeros((self.max_objs, 2), dtype=np.float32)
@@ -469,6 +472,8 @@ class JointDataset(LoadImagesAndLabels):  # for training
         ids = np.zeros((self.max_objs, ), dtype=np.int64)
 
         draw_gaussian = draw_msra_gaussian if self.opt.mse_loss else draw_umich_gaussian
+
+        # Build ground truth labels (heatmap, object size, offset, and ids)
         for k in range(num_objs):
             label = labels[k]
             bbox = label[2:]
@@ -484,8 +489,7 @@ class JointDataset(LoadImagesAndLabels):  # for training
                 radius = gaussian_radius((math.ceil(h), math.ceil(w)))
                 radius = max(0, int(radius))
                 radius = self.opt.hm_gauss if self.opt.mse_loss else radius
-                ct = np.array(
-                    [bbox[0], bbox[1]], dtype=np.float32)
+                ct = np.array([bbox[0], bbox[1]], dtype=np.float32)
                 ct_int = ct.astype(np.int32)
                 draw_gaussian(hm[cls_id], ct_int, radius)
                 wh[k] = 1. * w, 1. * h

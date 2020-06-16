@@ -197,13 +197,16 @@ class opts(object):
 
     if opt.master_batch_size == -1:
       opt.master_batch_size = opt.batch_size // len(opt.gpus)
+
     rest_batch_size = (opt.batch_size - opt.master_batch_size)
     opt.chunk_sizes = [opt.master_batch_size]
+
     for i in range(len(opt.gpus) - 1):
       slave_chunk_size = rest_batch_size // (len(opt.gpus) - 1)
       if i < rest_batch_size % (len(opt.gpus) - 1):
         slave_chunk_size += 1
       opt.chunk_sizes.append(slave_chunk_size)
+
     print('training chunk_sizes:', opt.chunk_sizes)
 
     opt.root_dir = root_dir

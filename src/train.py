@@ -36,14 +36,14 @@ def main(opt):
     dataset = Dataset(opt, dataset_root, trainset_paths, (1088, 608), augment=True, transforms=transforms)
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
 
-
     print('Training Set Up:\n'
-          '\tSelf-supervised training: {}\n'
-          '\tModel: {}\n\tInput size: {}\n\tBatch size: {}\n'
+          '\tSelf-supervised training: {}\n\tSave directory: {}\n'
+          '\tModel: {}\n\tInput size: {}\n\tBatch size: {}\n\tChunk size: {}\n'
           '\tEpochs: {}\n\t''Learning rate: {}\n\tLR Steps: {}\n'
           '\tHeads: {}\n\tHead Conv: {}\n\t''Debug level: {}\n'.
-          format(opt.unsup, opt.arch.capitalize(), opt.img_size, opt.batch_size, opt.num_epochs,
-                 opt.lr, opt.lr_step, opt.heads, opt.head_conv, opt.debug))
+          format(opt.unsup, opt.save_dir, opt.arch.capitalize(), opt.img_size,
+                 opt.batch_size, opt.chunk_sizes, opt.num_epochs, opt.lr,
+                 opt.lr_step, opt.heads, opt.head_conv, opt.debug))
 
     logger = Logger(opt)
 
