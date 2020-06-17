@@ -447,6 +447,7 @@ class JointDataset(LoadImagesAndLabels):  # for training
         img_path = self.img_files[ds][files_index - start_index]
         label_path = self.label_files[ds][files_index - start_index]
 
+        flipped = None
         if self.unsup:
             # Load image, flipped image, and ground truth detections for self-supervised learning
             img, labels, img_path, (input_h, input_w), flipped = self.get_data(img_path, label_path, unsup=True)
@@ -499,6 +500,10 @@ class JointDataset(LoadImagesAndLabels):  # for training
                 ids[k] = label[1]
 
         ret = {'input': img, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, 'reg': reg, 'ids': ids}
+
+        if flipped is not None:
+            ret['flipped'] = flipped
+
         return ret
 
 

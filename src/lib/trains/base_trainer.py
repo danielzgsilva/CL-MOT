@@ -16,7 +16,15 @@ class ModleWithLoss(torch.nn.Module):
         self.loss = loss
 
     def forward(self, batch):
-        outputs = self.model(batch['input'])
+        outputs = dict()
+
+        # Feed image to model
+        outputs['orig'] = self.model(batch['input'])
+
+        # When self-supervised learning, we also feed the horizontally flipped version
+        if 'flipped' in batch:
+            outputs['flipped'] = self.model(batch['flipped'])
+
         loss, loss_stats = self.loss(outputs, batch)
         return outputs[-1], loss, loss_stats
 

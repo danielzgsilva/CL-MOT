@@ -37,10 +37,6 @@ class opts(object):
                              action='store_true',
                              help='train using unsupervised learning '
                                   '(without ground truth object trackings)')
-    self.parser.add_argument('--unsup_loss',
-                             type=str,
-                             help='loss to use for self-supervised training',
-                             choices=['contrastive', 'triplet'])
 
     # system
     self.parser.add_argument('--gpus', default='0, 1',
@@ -160,7 +156,14 @@ class opts(object):
     self.parser.add_argument('--id_weight', type=float, default=1,
                              help='loss weight for id')
     self.parser.add_argument('--reid_dim', type=int, default=512,
-                             help='feature dim for reid')
+                             help='feature dim for reid embeddings')
+    self.parser.add_argument('--unsup_loss',
+                             type=str,
+                             default='cl_loss',
+                             help='loss to use for self-supervised training',
+                             choices=['cl_loss', 'trip_loss'])
+    self.parser.add_argument('--unsup_weight', type=float, default=1,
+                             help='weight for self-supervised loss on embeddings')
 
     self.parser.add_argument('--norm_wh', action='store_true',
                              help='L1(\hat(y) / y, 1) or L1(\hat(y), y)')
@@ -207,13 +210,10 @@ class opts(object):
         slave_chunk_size += 1
       opt.chunk_sizes.append(slave_chunk_size)
 
-    print('training chunk_sizes:', opt.chunk_sizes)
-
     opt.root_dir = root_dir
     opt.exp_dir = os.path.join(opt.root_dir, 'logs', opt.task)
     opt.save_dir = os.path.join(opt.exp_dir, opt.exp_id)
     opt.debug_dir = os.path.join(opt.save_dir, 'debug')
-    print('The output will be saved to ', opt.save_dir)
     
     if opt.resume and opt.load_model == '':
       model_path = opt.save_dir[:-4] if opt.save_dir.endswith('TEST') \

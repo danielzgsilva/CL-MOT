@@ -73,6 +73,7 @@ def main(opt):
         # Training epoch
         log_dict_train, _ = trainer.train(epoch, train_loader)
 
+        # Log results
         logger.write('epoch: {} |'.format(epoch))
         for k, v in log_dict_train.items():
             logger.scalar_summary('train_{}'.format(k), v, epoch)
