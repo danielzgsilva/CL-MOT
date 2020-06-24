@@ -37,11 +37,12 @@ def main(opt):
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
 
     print('Training Set Up:\n'
-          '\tSelf-supervised training: {}\n\tSave directory: {}\n'
+          '\tExpirement ID: {}\n\tSave directory: {}\n'
+          '\tSelf-supervised training: {}\n\tGPUs: {}\n'
           '\tModel: {}\n\tInput size: {}\n\tBatch size: {}\n\tChunk size: {}\n'
           '\tEpochs: {}\n\t''Learning rate: {}\n\tLR Steps: {}\n'
           '\tHeads: {}\n\tHead Conv: {}\n\t''Debug level: {}\n'.
-          format(opt.unsup, opt.save_dir, opt.arch.capitalize(), opt.img_size,
+          format(opt.exp_id, opt.save_dir, opt.unsup, opt.gpus, opt.arch.capitalize(), opt.img_size,
                  opt.batch_size, opt.chunk_sizes, opt.num_epochs, opt.lr,
                  opt.lr_step, opt.heads, opt.head_conv, opt.debug))
 
@@ -66,7 +67,7 @@ def main(opt):
     Trainer = train_factory[opt.task]
     trainer = Trainer(opt, model, optimizer)
     trainer.set_device(opt.gpus, opt.chunk_sizes, opt.device)
-    best = 1e10
+
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         mark = epoch if opt.save_all else 'last'
 
@@ -77,7 +78,7 @@ def main(opt):
         logger.write('epoch: {} |'.format(epoch))
         for k, v in log_dict_train.items():
             logger.scalar_summary('train_{}'.format(k), v, epoch)
-            logger.write('{} {:8f} | '.format(k, v))
+            logger.write('{} {:5f} | '.format(k, v))
         logger.write('\n')
 
         if opt.val_intervals > 0 and epoch % opt.val_intervals == 0:

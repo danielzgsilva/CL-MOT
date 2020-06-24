@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from models.decode import mot_decode
-from models.losses import FocalLoss, TripletLoss, ContrastiveLoss
+from models.losses import FocalLoss, TripletLoss, NTXentLoss
 from models.losses import RegL1Loss, RegLoss, NormRegL1Loss, RegWeightedL1Loss
 from models.utils import _sigmoid, _tranpose_and_gather_feat
 from utils.post_process import ctdet_post_process
@@ -42,9 +42,14 @@ class MotLoss(torch.nn.Module):
         # FC layer for supervised object ID prediction
         self.classifier = nn.Linear(self.emb_dim, self.nID)
 
-        # Self supervised losses for object embeddings
-        self.ContrastLoss = ContrastiveLoss()
-        self.TripLoss = TripletLoss()
+        # Self supervised loss for object embeddings
+        self.SelfSupLoss = NTXentLoss(opt.device, 0.5) if opt.unsup_loss == 'nt_xent' else \
+            TripletLoss(opt.device, 'batch_all', 0.5) if opt.unsup_loss == 'triplet_all' else \
+                TripletLoss(opt.device, 'batch_hard', 0.5) if opt.unsup_loss == 'triplet_hard' else None
+
+        if opt.unsup and self.SelfSupLoss is None:
+            raise ValueError('{} is not a supported self-supervised loss. '.format(opt.unsup_loss) + \
+                             'Choose nt_xent, triplet_all, or triplet_hard')
 
         self.emb_scale = math.sqrt(2) * math.log(self.nID - 1)
         self.s_det = nn.Parameter(-1.85 * torch.ones(1))
@@ -65,74 +70,62 @@ class MotLoss(torch.nn.Module):
             if not opt.mse_loss:
                 output['hm'] = _sigmoid(output['hm'])
 
-            loss_results['hm_loss'] += self.crit(output['hm'], batch['hm']) / opt.num_stacks
+            loss_results['hm'] += self.crit(output['hm'], batch['hm']) / opt.num_stacks
 
             # Supervised loss on object sizes
             if opt.wh_weight > 0:
                 if opt.dense_wh:
                     mask_weight = batch['dense_wh_mask'].sum() + 1e-4
-                    loss_results['wh_loss'] += (self.crit_wh(output['wh'] * batch['dense_wh_mask'],
-                                                             batch['dense_wh'] * batch['dense_wh_mask']) /
-                                                mask_weight) / opt.num_stacks
+                    loss_results['wh'] += (self.crit_wh(output['wh'] * batch['dense_wh_mask'],
+                                                        batch['dense_wh'] * batch['dense_wh_mask']) /
+                                           mask_weight) / opt.num_stacks
                 else:
-                    loss_results['wh_loss'] += self.crit_reg(
+                    loss_results['wh'] += self.crit_reg(
                         output['wh'], batch['reg_mask'],
                         batch['ind'], batch['wh']) / opt.num_stacks
 
             # Supervised loss on offsets
             if opt.reg_offset and opt.off_weight > 0:
-                loss_results['off_loss'] += self.crit_reg(output['reg'], batch['reg_mask'],
-                                                          batch['ind'], batch['reg']) / opt.num_stacks
+                loss_results['off'] += self.crit_reg(output['reg'], batch['reg_mask'],
+                                                     batch['ind'], batch['reg']) / opt.num_stacks
 
             id_head = _tranpose_and_gather_feat(output['id'], batch['ind'])
             id_head = id_head[batch['reg_mask'] > 0].contiguous()
             id_head = self.emb_scale * F.normalize(id_head)
 
-            id_target = batch['ids'][batch['reg_mask'] > 0]
-
             # Supervised loss on object ID predictions
-            # if opt.id_weight > 0 and not self.unsup:
-            if opt.id_weight > 0:
+            if opt.id_weight > 0 and not opt.unsup:
+                id_target = batch['ids'][batch['reg_mask'] > 0]
                 id_output = self.classifier(id_head).contiguous()
-                loss_results['id_loss'] += self.IDLoss(id_output, id_target)
-                # id_loss += self.IDLoss(id_output, id_target) + self.TriLoss(id_head, id_target)
+                loss_results['id'] += self.IDLoss(id_output, id_target)
 
             # Take self-supervised loss using negative sample (flipped img)
-            # BASICALLY JUST NEED TO IMPLEMENT THIS
-            # likely need to flip the previously flipped
             if opt.unsup and flipped_outputs is not None:
-                print(id_head.size())
                 flipped_output = flipped_outputs[s]
 
-                # Flip the previously flipped set of reid features to create negative sample
-                flipped_id_head = _tranpose_and_gather_feat(flipped_output['id'], batch['ind'])
+                flipped_id_head = _tranpose_and_gather_feat(flipped_output['id'], batch['flipped_ind'])
                 flipped_id_head = flipped_id_head[batch['reg_mask'] > 0].contiguous()
-                flipped_id_head = self.emb_scale * F.normalize(flipped_id_head)
+                # flipped_id_head = self.emb_scale * F.normalize(flipped_id_head)
+                flipped_id_head = F.normalize(flipped_id_head)
 
                 # Compute loss between the positive and negative set of reid features
-                if opt.unsup_loss == 'cl_loss':
-                    loss_results[opt.unsup_loss] = ContrastiveLoss(id_head, flipped_id_head)
-                elif opt.unsup_loss == 'trip_loss':
-                    loss_results[opt.unsup_loss] = TripletLoss(id_head, flipped_id_head)
-                else:
-                    raise ValueError('{} is not a supported self-supervised loss. '
-                                     'Choose cl_loss (contrastive loss) or trip_loss (triplet loss')
-
-        # loss = opt.hm_weight * hm_loss + opt.wh_weight * wh_loss + opt.off_weight * off_loss + opt.id_weight * id_loss
+                loss_results[opt.unsup_loss] = self.SelfSupLoss(id_head, flipped_id_head, batch['num_objs'])
 
         # Total supervised
-        det_loss = opt.hm_weight * loss_results['hm_loss'] + \
-                   opt.wh_weight * loss_results['wh_loss'] + \
-                   opt.off_weight * loss_results['off_loss']
+        det_loss = opt.hm_weight * loss_results['hm'] + \
+                   opt.wh_weight * loss_results['wh'] + \
+                   opt.off_weight * loss_results['off']
+
+        id_loss = torch.exp(-self.s_id) * loss_results['id'] if not opt.unsup else \
+            torch.exp(-self.s_id) * (loss_results[opt.unsup_loss])
 
         # Total of supervised and self-supervised losses on object embeddings
         total_loss = torch.exp(-self.s_det) * det_loss + \
-                     (torch.exp(-self.s_id) * (loss_results['id_loss'] + loss_results[opt.unsup_loss])) + \
-                     (self.s_det + self.s_id)
+                     torch.exp(-self.s_id) * id_loss + \
+                     self.s_det + self.s_id
 
         total_loss *= 0.5
-
-        loss_results['tot_loss'] = total_loss
+        loss_results['loss'] = total_loss
 
         return total_loss, loss_results
 
@@ -142,12 +135,11 @@ class MotTrainer(BaseTrainer):
         super(MotTrainer, self).__init__(opt, model, optimizer=optimizer)
 
     def _get_losses(self, opt):
-        # We always take these
-        loss_states = ['tot_loss', 'hm_loss', 'wh_loss', 'id_loss']
-        # loss_states = ['loss', 'hm_loss', 'wh_loss']
+        # We always take these losses
+        loss_states = ['loss', 'hm', 'wh']
 
         if opt.reg_offset:
-            loss_states.append('off_loss')
+            loss_states.append('off')
 
         # Use either contrastive or triplet loss on object embeddings if self-supervised training
         if opt.unsup:
@@ -155,20 +147,22 @@ class MotTrainer(BaseTrainer):
 
         # Standard cross entropy loss on object IDs when supervised training
         else:
-            # loss_states.append('id_loss')
-            pass
+            loss_states.append('id')
 
         loss = MotLoss(opt, loss_states)
         return loss_states, loss
 
-    def save_result(self, output, batch, results):
+    def save_result(self, outputs, batch, results):
+        output = outputs['orig'][-1]
         reg = output['reg'] if self.opt.reg_offset else None
-        dets = mot_decode(
-            output['hm'], output['wh'], reg=reg,
-            cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
+
+        dets, inds = mot_decode(output['hm'], output['wh'], reg=reg,
+                          cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
+
         dets = dets.detach().cpu().numpy().reshape(1, -1, dets.shape[2])
-        dets_out = ctdet_post_process(
-            dets.copy(), batch['meta']['c'].cpu().numpy(),
-            batch['meta']['s'].cpu().numpy(),
-            output['hm'].shape[2], output['hm'].shape[3], output['hm'].shape[1])
+
+        dets_out = ctdet_post_process(dets.copy(), batch['meta']['c'].cpu().numpy(),
+                                      batch['meta']['s'].cpu().numpy(),
+                                      output['hm'].shape[2], output['hm'].shape[3], output['hm'].shape[1])
+
         results[batch['meta']['img_id'].cpu().numpy()[0]] = dets_out[0]

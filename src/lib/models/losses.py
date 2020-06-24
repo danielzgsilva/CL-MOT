@@ -13,6 +13,8 @@ import torch.nn as nn
 from .utils import _tranpose_and_gather_feat
 import torch.nn.functional as F
 
+import numpy as np
+
 
 def _slow_neg_loss(pred, gt):
     '''focal loss from CornerNet'''
@@ -251,60 +253,302 @@ def compute_rot_loss(output, target_bin, target_res, mask):
     return loss_bin1 + loss_bin2 + loss_res
 
 
+class NTXentLoss(torch.nn.Module):
+
+    def __init__(self, device, temperature, use_cosine_similarity=True):
+        super(NTXentLoss, self).__init__()
+        self.num_objects = 0
+        self.temperature = temperature
+        self.device = device
+        self.softmax = torch.nn.Softmax(dim=-1)
+        self.mask_samples_from_same_repr = self._get_correlated_mask().type(torch.bool)
+        self.similarity_function = self._get_similarity_function(use_cosine_similarity)
+        self.criterion = torch.nn.CrossEntropyLoss(reduction="sum")
+
+    def _get_similarity_function(self, use_cosine_similarity):
+        if use_cosine_similarity:
+            self._cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
+            return self._cosine_simililarity
+        else:
+            return self._dot_simililarity
+
+    def _get_correlated_mask(self):
+        diag = np.eye(2 * self.num_objects)
+        l1 = np.eye((2 * self.num_objects), 2 * self.num_objects, k=-self.num_objects)
+        l2 = np.eye((2 * self.num_objects), 2 * self.num_objects, k=self.num_objects)
+        mask = torch.from_numpy((diag + l1 + l2))
+        mask = (1 - mask).type(torch.bool)
+        return mask.to(self.device)
+
+    @staticmethod
+    def _dot_simililarity(x, y):
+        v = torch.tensordot(x.unsqueeze(1), y.T.unsqueeze(0), dims=2)
+        # x shape: (N, 1, C)
+        # y shape: (1, C, 2N)
+        # v shape: (N, 2N)
+        return v
+
+    def _cosine_simililarity(self, x, y):
+        # x shape: (N, 1, C)
+        # y shape: (1, 2N, C)
+        # v shape: (N, 2N)
+        v = self._cosine_similarity(x.unsqueeze(1), y.unsqueeze(0))
+        return v
+
+    def forward(self, zis, zjs, objs_per_img):
+
+        assert zis.size(0) == zjs.size(0)
+
+        self.num_objects = zjs.size(0)
+
+        embeddings = torch.cat([zjs, zis], dim=0)
+        similarity_matrix = self.similarity_function(embeddings, embeddings)
+
+        # filter out the scores from the positive samples
+        l_pos = torch.diag(similarity_matrix, self.num_objects)
+        r_pos = torch.diag(similarity_matrix, -self.num_objects)
+        positives = torch.cat([l_pos, r_pos]).view(2 * self.num_objects, 1)
+
+        mask_samples_from_same_repr = self._get_correlated_mask().type(torch.bool)
+        negatives = similarity_matrix[mask_samples_from_same_repr].view(2 * self.num_objects, -1)
+
+        logits = torch.cat((positives, negatives), dim=1)
+        logits /= self.temperature
+
+        labels = torch.zeros(2 * self.num_objects).to(self.device).long()
+        loss = self.criterion(logits, labels)
+
+        return loss / (2 * self.num_objects)
+
+
 class TripletLoss(nn.Module):
-    """Triplet loss with hard positive/negative mining.
-    Reference:
-    Hermans et al. In Defense of the Triplet Loss for Person Re-Identification. arXiv:1703.07737.
-    Code imported from https://github.com/Cysu/open-reid/blob/master/reid/loss/triplet.py.
-    Args:
-        margin (float): margin for triplet.
+    """Triplet loss with batch hard or batch all mining.
+        Args:
+            margin (float): margin for triplets
+            mode (string): mining strategy used for building triplets
+                            [batch_all, batch_hard]
     """
 
-    def __init__(self, margin=0.3, mutual_flag=False):
+    def __init__(self, device, mode, margin=0.3):
         super(TripletLoss, self).__init__()
+        self.mode = mode
+        self.device = device
         self.margin = margin
-        self.ranking_loss = nn.MarginRankingLoss(margin=margin)
-        self.mutual = mutual_flag
 
-    def forward(self, inputs, targets):
-        """
+        self.loss = self.batch_all_triplet_loss if self.mode == 'batch_all' else \
+                    self.batch_hard_triplet_loss if self.mode == 'batch_hard' else None
+
+        if self.loss is None:
+            raise ValueError('{} is not a supported triplet mining strategy. '.format(self.mode) + \
+                             'Choose batch_all or batch_hard')
+
+    def _pairwise_distances(self, embeddings, squared=False):
+        """Compute the 2D matrix of distances between all the embeddings.
         Args:
-            inputs: feature matrix with shape (batch_size, feat_dim)
-            targets: ground truth labels with shape (num_classes)
+            embeddings: tensor of shape (batch_size, embed_dim)
+            squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
+                     If false, output is the pairwise euclidean distance matrix.
+        Returns:
+            pairwise_distances: tensor of shape (batch_size, batch_size)
         """
-        n = inputs.size(0)
-        # inputs = 1. * inputs / (torch.norm(inputs, 2, dim=-1, keepdim=True).expand_as(inputs) + 1e-12)
+        dot_product = torch.matmul(embeddings, embeddings.t())
 
-        # Compute pairwise distance, replace by the official when merged
-        dist = torch.pow(inputs, 2).sum(dim=1, keepdim=True).expand(n, n)
-        dist = dist + dist.t()
-        dist.addmm_(1, -2, inputs, inputs.t())
-        dist = dist.clamp(min=1e-12).sqrt()  # for numerical stability
+        # Get squared L2 norm for each embedding. We can just take the diagonal of `dot_product`.
+        # This also provides more numerical stability (the diagonal of the result will be exactly 0).
+        # shape (batch_size,)
+        square_norm = torch.diag(dot_product)
 
-        # For each anchor, find the hardest positive and negative
-        mask = targets.expand(n, n).eq(targets.expand(n, n).t())
-        dist_ap, dist_an = [], []
-        for i in range(n):
-            dist_ap.append(dist[i][mask[i]].max().unsqueeze(0))
-            dist_an.append(dist[i][mask[i] == 0].min().unsqueeze(0))
+        # Compute the pairwise distance matrix as we have:
+        # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
+        # shape (batch_size, batch_size)
+        distances = square_norm.unsqueeze(0) - 2.0 * dot_product + square_norm.unsqueeze(1)
 
-        dist_ap = torch.cat(dist_ap)
-        dist_an = torch.cat(dist_an)
+        # Because of computation errors, some distances might be negative so we put everything >= 0.0
+        distances[distances < 0] = 0
 
-        # Compute ranking hinge loss
-        y = torch.ones_like(dist_an)
-        loss = self.ranking_loss(dist_an, dist_ap, y)
+        if not squared:
+            # Because the gradient of sqrt is infinite when distances == 0.0 (ex: on the diagonal)
+            # we need to add a small epsilon where distances == 0.0
+            mask = distances.eq(0).float()
+            distances = distances + mask * 1e-16
 
-        if self.mutual:
-            return loss, dist
-        return loss
+            distances = (1.0 - mask) * torch.sqrt(distances)
 
+        return distances
 
-class ContrastiveLoss(nn.Module):
-    def __init__(self):
-        super(ContrastiveLoss, self).__init__()
-        pass
+    def _get_triplet_mask(self, labels, img_labels):
+        """Return a 3D mask where mask[a, p, n] is True iff the triplet (a, p, n) is valid.
+        A triplet (i, j, k) is valid if:
+            - i, j, k are distinct
+            - labels[i] == labels[j] and labels[i] != labels[k]
+            - img_labels[i] == img_labels[j] = img_labels[k]
+        Args:
+            labels: tensor with shape [batch_size]
+        """
+        # Check that i, j and k are distinct
+        indices_equal = torch.eye(labels.size(0)).bool().to(self.device)
+        indices_not_equal = ~indices_equal
+        i_not_equal_j = indices_not_equal.unsqueeze(2)
+        i_not_equal_k = indices_not_equal.unsqueeze(1)
+        j_not_equal_k = indices_not_equal.unsqueeze(0)
 
-    def forward(self, pos, neg):
-        pass
+        distinct_indices = (i_not_equal_j & i_not_equal_k) & j_not_equal_k
+
+        # Finding all triplets where labels[i] == labels[j] and labels[i] != labels[k]
+        label_equal = labels.unsqueeze(0) == labels.unsqueeze(1)
+        i_equal_j = label_equal.unsqueeze(2)
+        i_equal_k = label_equal.unsqueeze(1)
+
+        valid_labels = ~i_equal_k & i_equal_j
+
+        # Finding all triplets where img_labels[i] == img_labels[j] == img_labels[k]
+        img_label_equal = img_labels.unsqueeze(0) == img_labels.unsqueeze(1)
+        i_equal_j_img = img_label_equal.unsqueeze(2)
+        i_equal_k_img = img_label_equal.unsqueeze(1)
+
+        valid_img_labels = i_equal_k_img & i_equal_j_img
+
+        return valid_labels & valid_img_labels & distinct_indices
+
+    def _get_anchor_positive_triplet_mask(self, labels, img_labels):
+        """Return a 2D mask where mask[a, p] is True iff a and p are distinct, have the same label,
+           and were retrieved from the same image in the batch.
+        Args:
+            labels: tensor with shape [batch_size]
+            img_labels: tensor with shape [batch_size]
+        Returns:
+            mask: tensor with shape [batch_size, batch_size]
+        """
+
+        # Check that i and j are distinct
+        indices_not_equal = ~(torch.eye(labels.size(0)).bool().to(self.device))
+
+        # Check if labels[i] == labels[j]
+        # Uses broadcasting where the 1st argument has shape (1, batch_size) and the 2nd (batch_size, 1)
+        labels_equal = labels.unsqueeze(0) == labels.unsqueeze(1)
+
+        # Check if img_labels[i] == img_labels[j]
+        images_equal = img_labels.unsqueeze(0) == img_labels.unsqueeze(1)
+
+        return labels_equal & images_equal & indices_not_equal
+
+    def _get_anchor_negative_triplet_mask(self, labels, img_labels):
+        """Return a 2D mask where mask[a, n] is True iff a and n have distinct labels
+           and were retrieved from the same image in the batch.
+        Args:
+            labels: tf.int32 `Tensor` with shape [batch_size]
+            img_labels: tensor with shape [batch_size]
+        Returns:
+            mask: tf.bool `Tensor` with shape [batch_size, batch_size]
+        """
+
+        # Check if labels[i] != labels[k]
+        # Uses broadcasting where the 1st argument has shape (1, batch_size) and the 2nd (batch_size, 1)
+        labels_not_equal = ~(labels.unsqueeze(0) == labels.unsqueeze(1))
+
+        # Check if img_labels[i] == img_labels[j]
+        images_equal = img_labels.unsqueeze(0) == img_labels.unsqueeze(1)
+
+        return labels_not_equal & images_equal
+
+    def batch_hard_triplet_loss(self, embeddings, labels, img_labels, squared=False):
+        """Build the triplet loss over a batch of embeddings.
+        For each anchor, we get the hardest positive and hardest negative to form a triplet.
+        Args:
+            embeddings: tensor of shape (batch_size, embed_dim)
+            labels: labels of the batch, of size (batch_size,)
+            img_labels: (batch_size,)
+            squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
+                     If false, output is the pairwise euclidean distance matrix.
+        Returns:
+            triplet_loss: scalar tensor containing the triplet loss
+        """
+
+        # Get the pairwise distance matrix
+        pairwise_dist = self._pairwise_distances(embeddings, squared=squared)
+
+        # For each anchor, get the hardest positive
+        # First, we need to get a mask for every valid positive (they should have same label)
+        mask_anchor_positive = self._get_anchor_positive_triplet_mask(labels, img_labels).float()
+
+        # We put to 0 any element where (a, p) is not valid (valid if a != p and label(a) == label(p))
+        anchor_positive_dist = mask_anchor_positive * pairwise_dist
+
+        # shape (batch_size, 1)
+        hardest_positive_dist, _ = anchor_positive_dist.max(1, keepdim=True)
+
+        # For each anchor, get the hardest negative
+        # First, we need to get a mask for every valid negative (they should have different labels)
+        mask_anchor_negative = self._get_anchor_negative_triplet_mask(labels, img_labels).float()
+
+        # We add the maximum value in each row to the invalid negatives (label(a) == label(n))
+        max_anchor_negative_dist, _ = pairwise_dist.max(1, keepdim=True)
+        anchor_negative_dist = pairwise_dist + max_anchor_negative_dist * (1.0 - mask_anchor_negative)
+
+        # shape (batch_size,)
+        hardest_negative_dist, _ = anchor_negative_dist.min(1, keepdim=True)
+
+        # Combine biggest d(a, p) and smallest d(a, n) into final triplet loss
+        tl = hardest_positive_dist - hardest_negative_dist + self.margin
+        tl[tl < 0] = 0
+        triplet_loss = tl.mean()
+
+        return triplet_loss
+
+    def batch_all_triplet_loss(self, embeddings, labels, img_labels, squared=False):
+        """Build the triplet loss over a batch of embeddings.
+        We generate all the valid triplets and average the loss over the positive ones.
+        Args:
+            embeddings: tensor of shape (batch_size, embed_dim)
+            labels: labels of the batch, of size (batch_size,)
+            img_labels: (batch_size,)
+            squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
+                     If false, output is the pairwise euclidean distance matrix.
+        Returns:
+            triplet_loss: scalar tensor containing the triplet loss
+        """
+
+        # Get the pairwise distance matrix
+        pairwise_dist = self._pairwise_distances(embeddings, squared=squared)
+
+        anchor_positive_dist = pairwise_dist.unsqueeze(2)
+        anchor_negative_dist = pairwise_dist.unsqueeze(1)
+
+        # Compute a 3D tensor of size (batch_size, batch_size, batch_size)
+        # triplet_loss[i, j, k] will contain the triplet loss of anchor=i, positive=j, negative=k
+        # Uses broadcasting where the 1st argument has shape (batch_size, batch_size, 1)
+        # and the 2nd (batch_size, 1, batch_size)
+        triplet_loss = anchor_positive_dist - anchor_negative_dist + self.margin
+
+        # Put to zero the invalid triplets
+        mask = self._get_triplet_mask(labels, img_labels)
+        triplet_loss = mask.float() * triplet_loss
+
+        # Remove negative losses (i.e. the easy triplets)
+        triplet_loss[triplet_loss < 0] = 0
+
+        # Count number of positive triplets (where triplet_loss > 0)
+        positive_triplets = triplet_loss[triplet_loss > 1e-16]
+        num_positive_triplets = positive_triplets.size(0)
+
+        # Get final mean triplet loss over the positive valid triplets
+        triplet_loss = triplet_loss.sum() / (num_positive_triplets + 1e-16)
+
+        return triplet_loss
+
+    def forward(self, zis, zjs, objs_per_img):
+        assert zis.size(0) == zjs.size(0)
+        num_objects = zjs.size(0)
+
+        embeddings = torch.cat([zis, zjs], dim=0)
+        labels = torch.tensor([i for i in range(num_objects)] * 2).to(self.device)
+
+        # Tracks which image in the batch each embedding is from
+        image_labels = []
+        for img_num, obj_cnt in enumerate(objs_per_img):
+            image_labels.extend([img_num] * obj_cnt)
+        image_labels = torch.tensor(image_labels * 2).to(self.device)
+
+        return self.loss(embeddings, labels, image_labels)
+
 

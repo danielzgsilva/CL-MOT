@@ -58,7 +58,7 @@ def test_emb(
     print('Extracting pedestrain features...')
     for batch_i, batch in enumerate(dataloader):
         t = time.time()
-        output = model(batch['input'].cuda())[-1]
+        output = model(batch['img'].cuda())[-1]
         id_head = _tranpose_and_gather_feat(output['id'], batch['ind'].cuda())
         id_head = id_head[batch['reg_mask'].cuda() > 0].contiguous()
         emb_scale = math.sqrt(2) * math.log(opt.nID - 1)

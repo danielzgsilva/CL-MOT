@@ -3,10 +3,14 @@ from __future__ import division
 from __future__ import print_function
 
 import time
-import torch
 from progress.bar import Bar
+import torch
+import numpy as np
+
+from models.decode import mot_decode
 from models.data_parallel import DataParallel
 from utils.utils import AverageMeter
+from utils.debugger import Debugger
 
 
 class ModleWithLoss(torch.nn.Module):
@@ -19,14 +23,16 @@ class ModleWithLoss(torch.nn.Module):
         outputs = dict()
 
         # Feed image to model
-        outputs['orig'] = self.model(batch['input'])
+        outputs['orig'] = self.model(batch['img'])
 
         # When self-supervised learning, we also feed the horizontally flipped version
-        if 'flipped' in batch:
-            outputs['flipped'] = self.model(batch['flipped'])
+        if 'flipped_img' in batch:
+            outputs['flipped'] = self.model(batch['flipped_img'])
 
+        # Take loss
         loss, loss_stats = self.loss(outputs, batch)
-        return outputs[-1], loss, loss_stats
+
+        return outputs, loss, loss_stats
 
 
 class BaseTrainer(object):
@@ -81,7 +87,7 @@ class BaseTrainer(object):
                 if k != 'meta':
                     batch[k] = batch[k].to(device=opt.device, non_blocking=True)
 
-            output, loss, loss_stats = model_with_loss(batch)
+            outputs, loss, loss_stats = model_with_loss(batch)
             loss = loss.mean()
 
             if phase == 'train':
@@ -96,37 +102,114 @@ class BaseTrainer(object):
                 epoch, iter_id, num_iters, phase=phase, total=bar.elapsed_td, eta=bar.eta_td)
 
             for l in avg_loss_stats:
-                avg_loss_stats[l].update(loss_stats[l].mean().item(), batch['input'].size(0))
-                Bar.suffix = Bar.suffix + '|{} {:.4f} '.format(l, avg_loss_stats[l].avg)
+                avg_loss_stats[l].update(loss_stats[l].mean().item(), batch['img'].size(0))
+                Bar.suffix = Bar.suffix + '|{} {:.3f} '.format(l, avg_loss_stats[l].avg)
 
             if not opt.hide_data_time:
                 Bar.suffix = Bar.suffix + '|Data {dt.val:.3f}s({dt.avg:.3f}s) ' \
                                           '|Net {bt.avg:.3f}s'.format(dt=data_time, bt=batch_time)
-            if opt.no_bar > 0:
+            if opt.no_bar:
                 print('{}/{}| {}'.format(opt.task, opt.exp_id, Bar.suffix))
             else:
                 bar.next()
 
+            if self.opt.debug > 0:
+                self.debug(batch, outputs, iter_id, dataset=data_loader.dataset)
+
             if opt.test:
-                self.save_result(output, batch, results)
-            del output, loss, loss_stats, batch
+                self.save_result(outputs, batch, results)
+
+            del outputs, loss, loss_stats, batch
 
         bar.finish()
         ret = {k: v.avg for k, v in avg_loss_stats.items()}
         ret['time'] = bar.elapsed_td.total_seconds() / 60.
         return ret, results
 
-    def debug(self, batch, output, iter_id):
-        raise NotImplementedError
+    def debug(self, batch, outputs, iter_id, dataset):
+        opt = self.opt
 
-    def save_result(self, output, batch, results):
-        raise NotImplementedError
+        # Ground truth detections
+        dets_gt = batch['meta']['gt_det']
 
-    def _get_losses(self, opt):
-        raise NotImplementedError
+        # Process predictions on original image
+        output = outputs['orig'][-1]
+        reg = output['reg'] if self.opt.reg_offset else None
+        _dets, inds = mot_decode(output['hm'], output['wh'], reg=reg,
+                                 cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
+        _dets = _dets.detach().cpu().numpy()
+        dets = {'bboxes': _dets[:, :, :4], 'scores': _dets[:, :, 4], 'clses': _dets[:, :, 5]}
+
+        # Process predictions on flipped image
+        flipped_dets = None
+        if 'flipped' in outputs:
+            flipped_output = outputs['flipped'][-1]
+            f_reg = flipped_output['reg'] if self.opt.reg_offset else None
+            _f_dets, f_inds = mot_decode(flipped_output['hm'], flipped_output['wh'], reg=f_reg,
+                                     cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
+            _f_dets = _f_dets.detach().cpu().numpy()
+            flipped_dets = {'bboxes': _f_dets[:, :, :4], 'scores': _f_dets[:, :, 4], 'clses': _f_dets[:, :, 5]}
+
+        # Batch size should be 1 if debug is set
+        for i in range(opt.batch_size):
+            debugger = Debugger(opt=opt, dataset=dataset)
+
+            img = batch['img'][i].detach().cpu().numpy().transpose(1, 2, 0)
+            # img = np.clip(((img * dataset.std + dataset.mean) * 255.), 0, 255).astype(np.uint8)
+            img = np.clip(img * 255., 0, 255).astype(np.uint8)
+
+            flipped_img = None
+            if 'flipped_img' in batch:
+                flipped_img = batch['flipped_img'][i].detach().cpu().numpy().transpose(1, 2, 0)
+                flipped_img = np.clip(flipped_img * 255., 0, 255).astype(np.uint8)
+
+            pred = debugger.gen_colormap(output['hm'][i].detach().cpu().numpy())
+            gt = debugger.gen_colormap(batch['hm'][i].detach().cpu().numpy())
+            debugger.add_blend_img(img, pred, 'pred_hm')
+            debugger.add_blend_img(img, gt, 'gt_hm')
+
+            # Predictions
+            debugger.add_img(img, img_id='out_pred')
+            for k in range(len(dets['scores'][i])):
+                if dets['scores'][i, k] > opt.vis_thresh:
+                    debugger.add_coco_bbox(dets['bboxes'][i, k] * opt.down_ratio, dets['clses'][i, k],
+                                           dets['scores'][i, k], img_id='out_pred')
+
+            # Ground truth
+            debugger.add_img(img, img_id='out_gt')
+            for k in range(len(dets_gt['scores'][i])):
+                if dets_gt['scores'][i][k] > opt.vis_thresh:
+                    debugger.add_coco_bbox(dets_gt['bboxes'][i][k] * opt.down_ratio, dets_gt['clses'][i][k],
+                                           dets_gt['scores'][i][k], img_id='out_gt')
+
+            if flipped_img is not None and flipped_dets is not None:
+                # Flipped predictions
+                debugger.add_img(flipped_img, img_id='flipped_pred')
+                for k in range(len(flipped_dets['scores'][i])):
+                    if flipped_dets['scores'][i, k] > opt.vis_thresh:
+                        debugger.add_coco_bbox(flipped_dets['bboxes'][i, k] * opt.down_ratio, flipped_dets['clses'][i, k],
+                                               flipped_dets['scores'][i, k], img_id='flipped_pred')
+
+                # Flipped ground truth
+                debugger.add_img(flipped_img, img_id='flipped_gt')
+                for k in range(len(dets_gt['scores'][i])):
+                    if dets_gt['scores'][i][k] > opt.vis_thresh:
+                        debugger.add_coco_bbox(dets_gt['flipped_bboxes'][i][k] * opt.down_ratio, dets_gt['clses'][i][k],
+                                               dets_gt['scores'][i][k], img_id='flipped_gt')
+
+            if opt.debug == 4:
+                debugger.save_all_imgs(opt.debug_dir, prefix='{}'.format(iter_id))
+            else:
+                debugger.show_all_imgs(pause=True)
 
     def val(self, epoch, data_loader):
         return self.run_epoch('val', epoch, data_loader)
 
     def train(self, epoch, data_loader):
         return self.run_epoch('train', epoch, data_loader)
+
+    def save_result(self, output, batch, results):
+        raise NotImplementedError
+
+    def _get_losses(self, opt):
+        raise NotImplementedError

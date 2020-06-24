@@ -61,6 +61,7 @@ def mot_decode(heat, wh, reg=None, cat_spec_wh=False, K=100):
     else:
         xs = xs.view(batch, K, 1) + 0.5
         ys = ys.view(batch, K, 1) + 0.5
+
     wh = _tranpose_and_gather_feat(wh, inds)
     if cat_spec_wh:
         wh = wh.view(batch, K, cat, 2)
@@ -68,12 +69,14 @@ def mot_decode(heat, wh, reg=None, cat_spec_wh=False, K=100):
         wh = wh.gather(2, clses_ind).view(batch, K, 2)
     else:
         wh = wh.view(batch, K, 2)
+
     clses = clses.view(batch, K, 1).float()
     scores = scores.view(batch, K, 1)
     bboxes = torch.cat([xs - wh[..., 0:1] / 2,
                         ys - wh[..., 1:2] / 2,
                         xs + wh[..., 0:1] / 2,
                         ys + wh[..., 1:2] / 2], dim=2)
+
     detections = torch.cat([bboxes, scores, clses], dim=2)
 
     return detections, inds

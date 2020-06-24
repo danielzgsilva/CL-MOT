@@ -221,14 +221,14 @@ class LoadImagesAndLabels:  # for training
             img_hsv[:, :, 2] = V.astype(np.uint8)
             cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img)
 
-        flipped = None
+        flipped_img = None
         if unsup:
             # create flipped image for contrastive learning
-            flipped = np.fliplr(img)
-            flipped = np.ascontiguousarray(flipped[:, :, ::-1])  # BGR to RGB
+            flipped_img = np.fliplr(img)
+            flipped_img = np.ascontiguousarray(flipped_img[:, :, ::-1])  # BGR to RGB
 
         elif self.augment:
-            # random left-right flip
+            # random left-right flip during supervised learning
             if random.random() > 0.5:
                 img = np.fliplr(img)
                 if nL > 0:
@@ -239,10 +239,22 @@ class LoadImagesAndLabels:  # for training
         if self.transforms is not None:
             img = self.transforms(img)
 
-            if flipped is not None:
-                flipped = self.transforms(flipped)
+            if flipped_img is not None:
+                flipped_img = self.transforms(flipped_img)
 
-        return img, labels, img_path, (h, w), flipped
+        return img, labels, img_path, (h, w), flipped_img
+
+    def format_gt_det(self, gt_det):
+        if len(gt_det['scores']) == 0:
+            gt_det = {'bboxes': np.array([[0, 0, 1, 1]], dtype=np.float32),
+                      'scores': np.array([1], dtype=np.float32),
+                      'clses': np.array([0], dtype=np.float32),
+                      'cts': np.array([[0, 0]], dtype=np.float32),
+                      'flipped_bboxes': np.array([[0, 0, 1, 1]], dtype=np.float32),
+                      'flipped_cts': np.array([[0, 0]], dtype=np.float32)}
+
+        gt_det = {k: np.array(gt_det[k], dtype=np.float32) for k in gt_det}
+        return gt_det
 
     def __len__(self):
         return self.nF  # number of images
@@ -447,10 +459,16 @@ class JointDataset(LoadImagesAndLabels):  # for training
         img_path = self.img_files[ds][files_index - start_index]
         label_path = self.label_files[ds][files_index - start_index]
 
-        flipped = None
+        flipped_img, flipped_labels = None, None
         if self.unsup:
             # Load image, flipped image, and ground truth detections for self-supervised learning
-            img, labels, img_path, (input_h, input_w), flipped = self.get_data(img_path, label_path, unsup=True)
+            img, labels, img_path, (input_h, input_w), flipped_img = self.get_data(img_path, label_path, unsup=True)
+
+            # Flip bboxes to match flipped image
+            flipped_labels = labels.copy()
+            if len(flipped_labels) > 0:
+                flipped_labels[:, 2] = 1 - flipped_labels[:, 2]
+
         else:
             # Load image with ground truth detections and object IDs for supervised learning
             img, labels, img_path, (input_h, input_w), _ = self.get_data(img_path, label_path)
@@ -465,18 +483,31 @@ class JointDataset(LoadImagesAndLabels):  # for training
         num_classes = self.num_classes
         num_objs = labels.shape[0]
 
+        # heat map representing object detections
         hm = np.zeros((num_classes, output_h, output_w), dtype=np.float32)
+
+        # width and height of each object
         wh = np.zeros((self.max_objs, 2), dtype=np.float32)
+
+        # object center offset due to resizing and decimal error
         reg = np.zeros((self.max_objs, 2), dtype=np.float32)
-        ind = np.zeros((self.max_objs, ), dtype=np.int64)
-        reg_mask = np.zeros((self.max_objs, ), dtype=np.uint8)
-        ids = np.zeros((self.max_objs, ), dtype=np.int64)
+
+        # contains object centers
+        ind = np.zeros((self.max_objs,), dtype=np.int64)
+
+        # mask representing the gt number of objects in this frame
+        reg_mask = np.zeros((self.max_objs,), dtype=np.uint8)
+
+        # object IDs
+        ids = np.zeros((self.max_objs,), dtype=np.int64)
+
+        gt_det = {'bboxes': [], 'scores': [], 'clses': [], 'cts': []}
 
         draw_gaussian = draw_msra_gaussian if self.opt.mse_loss else draw_umich_gaussian
 
-        # Build ground truth labels (heatmap, object size, offset, and ids)
+        # Build ground truth labels
         for k in range(num_objs):
-            label = labels[k]
+            label = labels[k]  # [class, identity, x_center, y_center, width, height]
             bbox = label[2:]
             cls_id = int(label[0])
             bbox[[0, 2]] = bbox[[0, 2]] * output_w
@@ -499,10 +530,49 @@ class JointDataset(LoadImagesAndLabels):  # for training
                 reg_mask[k] = 1
                 ids[k] = label[1]
 
-        ret = {'input': img, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, 'reg': reg, 'ids': ids}
+                gt_det['bboxes'].append(
+                    np.array([ct[0] - w / 2, ct[1] - h / 2,
+                              ct[0] + w / 2, ct[1] + h / 2], dtype=np.float32))
+                gt_det['scores'].append(1)
+                gt_det['clses'].append(cls_id)
+                gt_det['cts'].append(ct)
 
-        if flipped is not None:
-            ret['flipped'] = flipped
+        ret = {'img': img, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, 'reg': reg, 'ids': ids}
+
+        if flipped_img is not None and flipped_labels is not None:
+            flipped_ind = np.zeros((self.max_objs,), dtype=np.int64)
+            gt_det['flipped_bboxes'] = []
+            gt_det['flipped_cts'] = []
+
+            for k in range(num_objs):
+                flipped_label = flipped_labels[k]
+                bbox = flipped_label[2:]
+                bbox[[0, 2]] = bbox[[0, 2]] * output_w
+                bbox[[1, 3]] = bbox[[1, 3]] * output_h
+                bbox[0] = np.clip(bbox[0], 0, output_w - 1)
+                bbox[1] = np.clip(bbox[1], 0, output_h - 1)
+                h = bbox[3]
+                w = bbox[2]
+
+                if h > 0 and w > 0:
+                    ct = np.array([bbox[0], bbox[1]], dtype=np.float32)
+                    ct_int = ct.astype(np.int32)
+                    flipped_ind[k] = ct_int[1] * output_w + ct_int[0]
+
+                    gt_det['flipped_bboxes'].append(
+                        np.array([ct[0] - w / 2, ct[1] - h / 2,
+                                  ct[0] + w / 2, ct[1] + h / 2], dtype=np.float32))
+                    gt_det['flipped_cts'].append(ct)
+
+            ret['flipped_img'] = flipped_img
+            ret['flipped_ind'] = flipped_ind
+
+        ret['num_objs'] = torch.tensor([num_objs])
+
+        if self.opt.debug > 0:
+            gt_det = self.format_gt_det(gt_det)
+            meta = {'gt_det': gt_det, 'img_path': img_path}
+            ret['meta'] = meta
 
         return ret
 
@@ -579,5 +649,3 @@ class DetDataset(LoadImagesAndLabels):  # for training
                 labels[i, 1] += self.tid_start_index[ds]
 
         return imgs, labels0, img_path, (h, w)
-
-
