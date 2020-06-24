@@ -11,7 +11,6 @@ import torch
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
 from torch import nn
-from torchvision.ops import DeformConv2d
 
 try:
     from .DCNv2.dcn_v2 import DCN
@@ -396,29 +395,11 @@ class DeformConv(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        self.kernel_size = (3, 3)
-        self.deformable_groups = 1
-        self.stride = 1
-        self.padding = 1
-
-        # self.conv = DCN(chi, cho, kernel_size=(3, 3), stride=1, padding=1, dilation=1, deformable_groups=1)
-
-        self.conv = DeformConv2d(chi, cho, kernel_size=self.kernel_size, stride=self.stride,
-                                 padding=self.padding, dilation=1, groups=self.deformable_groups)
-
-        channels_ = self.deformable_groups * 2 * self.kernel_size[0] * self.kernel_size[1]
-
-        self.conv_offset = nn.Conv2d(chi, channels_, kernel_size=self.kernel_size,
-                                     stride=self.stride, padding=self.padding, bias=True)
-        self.init_offset()
-
-    def init_offset(self):
-        self.conv_offset.weight.data.zero_()
-        self.conv_offset.bias.data.zero_()
+        assert DCN is not None
+        self.conv = DCN(chi, cho, kernel_size=(3,3), stride=1, padding=1, dilation=1, deformable_groups=1)
 
     def forward(self, x):
-        offset = self.conv_offset(x)
-        x = self.conv(x, offset)
+        x = self.conv(x)
         x = self.actf(x)
         return x
 
@@ -500,7 +481,7 @@ class DLASeg(nn.Module):
         super(DLASeg, self).__init__()
         assert down_ratio in [2, 4, 8, 16]
 
-        self.node_type = DLA_NODE['conv']
+        self.node_type = DLA_NODE['dcn']
 
         self.first_level = int(np.log2(down_ratio))
         self.last_level = last_level
