@@ -146,7 +146,7 @@ class BaseTrainer(object):
             flipped_output = outputs['flipped'][-1]
             f_reg = flipped_output['reg'] if self.opt.reg_offset else None
             _f_dets, f_inds = mot_decode(flipped_output['hm'], flipped_output['wh'], reg=f_reg,
-                                     cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
+                                         cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
             _f_dets = _f_dets.detach().cpu().numpy()
             flipped_dets = {'bboxes': _f_dets[:, :, :4], 'scores': _f_dets[:, :, 4], 'clses': _f_dets[:, :, 5]}
 
@@ -156,12 +156,12 @@ class BaseTrainer(object):
 
             img = batch['img'][i].detach().cpu().numpy().transpose(1, 2, 0)
             # img = np.clip(((img * dataset.std + dataset.mean) * 255.), 0, 255).astype(np.uint8)
-            img = np.clip(img * 255., 0, 255).astype(np.uint8)
+            img = np.clip(img * 255., 0, 255).astype(np.uint8)[:, :, ::-1]  # RGB to BGR for opencv
 
             flipped_img = None
             if 'flipped_img' in batch:
                 flipped_img = batch['flipped_img'][i].detach().cpu().numpy().transpose(1, 2, 0)
-                flipped_img = np.clip(flipped_img * 255., 0, 255).astype(np.uint8)
+                flipped_img = np.clip(flipped_img * 255., 0, 255).astype(np.uint8)[:, :, ::-1] # RGB to BGR
 
             pred = debugger.gen_colormap(output['hm'][i].detach().cpu().numpy())
             gt = debugger.gen_colormap(batch['hm'][i].detach().cpu().numpy())
@@ -187,7 +187,8 @@ class BaseTrainer(object):
                 debugger.add_img(flipped_img, img_id='flipped_pred')
                 for k in range(len(flipped_dets['scores'][i])):
                     if flipped_dets['scores'][i, k] > opt.vis_thresh:
-                        debugger.add_coco_bbox(flipped_dets['bboxes'][i, k] * opt.down_ratio, flipped_dets['clses'][i, k],
+                        debugger.add_coco_bbox(flipped_dets['bboxes'][i, k] * opt.down_ratio,
+                                               flipped_dets['clses'][i, k],
                                                flipped_dets['scores'][i, k], img_id='flipped_pred')
 
                 # Flipped ground truth

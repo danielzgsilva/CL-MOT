@@ -155,94 +155,92 @@ class LoadImagesAndLabels:  # for training
         height = self.height
         width = self.width
 
-        img = cv2.imread(img_path)  # BGR
-        if img is None:
+        images = {}
+        labels = {}
+
+        # Load image
+        images['orig'] = cv2.imread(img_path)  # BGR
+        if images['orig'] is None:
             raise ValueError('File corrupt {}'.format(img_path))
 
-        h, w, _ = img.shape
-        img, ratio, padw, padh = letterbox(img, height=height, width=width)
+        h, w, _ = images['orig'] .shape
 
-        # Load labels
-        if os.path.isfile(label_path):
-            labels0 = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
-
-            # Normalized xywh to pixel xyxy format
-            labels = labels0.copy()
-            labels[:, 2] = ratio * w * (labels0[:, 2] - labels0[:, 4] / 2) + padw
-            labels[:, 3] = ratio * h * (labels0[:, 3] - labels0[:, 5] / 2) + padh
-            labels[:, 4] = ratio * w * (labels0[:, 2] + labels0[:, 4] / 2) + padw
-            labels[:, 5] = ratio * h * (labels0[:, 3] + labels0[:, 5] / 2) + padh
-        else:
-            labels = np.array([])
-
-        # Augment image and labels
-        if self.augment:
-            img, labels, M = random_affine(img, labels, degrees=(-5, 5), translate=(0.10, 0.10), scale=(0.50, 1.20))
-
-        plotFlag = False
-        if plotFlag:
-            import matplotlib
-            matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-            plt.figure(figsize=(50, 50))
-            plt.imshow(img[:, :, ::-1])
-            plt.plot(labels[:, [2, 4, 4, 2, 2]].T, labels[:, [3, 3, 5, 5, 3]].T, '.-')
-            plt.axis('off')
-            plt.savefig('test.jpg')
-            time.sleep(10)
-
-        nL = len(labels)
-        if nL > 0:
-            # convert xyxy to xywh
-            labels[:, 2:6] = xyxy2xywh(labels[:, 2:6].copy())  # / height
-            labels[:, 2] /= width
-            labels[:, 3] /= height
-            labels[:, 4] /= width
-            labels[:, 5] /= height
-
-        if self.augment:
-            # saturation and brightness augmentation by 50%
-            fraction = 0.50
-            img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-            S = img_hsv[:, :, 1].astype(np.float32)
-            V = img_hsv[:, :, 2].astype(np.float32)
-
-            a = (random.random() * 2 - 1) * fraction + 1
-            S *= a
-            if a > 1:
-                np.clip(S, a_min=0, a_max=255, out=S)
-
-            a = (random.random() * 2 - 1) * fraction + 1
-            V *= a
-            if a > 1:
-                np.clip(V, a_min=0, a_max=255, out=V)
-
-            img_hsv[:, :, 1] = S.astype(np.uint8)
-            img_hsv[:, :, 2] = V.astype(np.uint8)
-            cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img)
-
-        flipped_img = None
+        # create horizontally flipped image for contrastivelearning
         if unsup:
-            # create flipped image for contrastive learning
-            flipped_img = np.fliplr(img)
-            flipped_img = np.ascontiguousarray(flipped_img[:, :, ::-1])  # BGR to RGB
+            images['flipped'] = cv2.flip(images['orig'], 1)
 
-        elif self.augment:
-            # random left-right flip during supervised learning
-            if random.random() > 0.5:
-                img = np.fliplr(img)
-                if nL > 0:
-                    labels[:, 2] = 1 - labels[:, 2]
+        for key, img in images.items():
+            # Saturation and brightness augmentation by 50%
+            if self.augment:
+                fraction = 0.50
+                img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+                S = img_hsv[:, :, 1].astype(np.float32)
+                V = img_hsv[:, :, 2].astype(np.float32)
 
-        img = np.ascontiguousarray(img[:, :, ::-1])  # BGR to RGB
+                a = (random.random() * 2 - 1) * fraction + 1
+                S *= a
+                if a > 1:
+                    np.clip(S, a_min=0, a_max=255, out=S)
 
-        if self.transforms is not None:
-            img = self.transforms(img)
+                a = (random.random() * 2 - 1) * fraction + 1
+                V *= a
+                if a > 1:
+                    np.clip(V, a_min=0, a_max=255, out=V)
 
-            if flipped_img is not None:
-                flipped_img = self.transforms(flipped_img)
+                img_hsv[:, :, 1] = S.astype(np.uint8)
+                img_hsv[:, :, 2] = V.astype(np.uint8)
+                cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img)
 
-        return img, labels, img_path, (h, w), flipped_img
+            img, ratio, padw, padh = letterbox(img, height=height, width=width)
+
+            # Load labels
+            if os.path.isfile(label_path):
+                labels_ = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
+
+                if key == 'flipped' and len(labels_) > 0:
+                    labels_[:, 2] = 1 - labels_[:, 2]
+
+                # Normalized xywh to pixel xyxy format
+                labels[key] = labels_.copy()
+                labels[key][:, 2] = ratio * w * (labels_[:, 2] - labels_[:, 4] / 2) + padw
+                labels[key][:, 3] = ratio * h * (labels_[:, 3] - labels_[:, 5] / 2) + padh
+                labels[key][:, 4] = ratio * w * (labels_[:, 2] + labels_[:, 4] / 2) + padw
+                labels[key][:, 5] = ratio * h * (labels_[:, 3] + labels_[:, 5] / 2) + padh
+            else:
+                labels[key] = np.array([])
+
+            # Augment image and labels
+            if self.augment:
+                img, labels[key], M = random_affine(img, labels[key], degrees=(-5, 5), translate=(0.10, 0.10), scale=(0.50, 1.20))
+
+            nL = len(labels[key])
+            if nL > 0:
+                # convert xyxy to xywh
+                labels[key][:, 2:6] = xyxy2xywh(labels[key][:, 2:6].copy())  # / height
+                labels[key][:, 2] /= width
+                labels[key][:, 3] /= height
+                labels[key][:, 4] /= width
+                labels[key][:, 5] /= height
+
+            if not unsup and self.augment:
+                # random left-right flip during supervised learning
+                if random.random() > 0.5:
+                    img = np.fliplr(img)
+                    if nL > 0:
+                        labels[key][:, 2] = 1 - labels[key][:, 2]
+
+            img = np.ascontiguousarray(img[:, :, ::-1])  # BGR to RGB
+
+            if self.transforms is not None:
+                img = self.transforms(img)
+
+            images[key] = img
+
+        if 'flipped' not in images:
+            images['flipped'] = None
+            labels['flipped'] = None
+
+        return images, labels, img_path, (h, w)
 
     def format_gt_det(self, gt_det):
         if len(gt_det['scores']) == 0:
@@ -459,19 +457,10 @@ class JointDataset(LoadImagesAndLabels):  # for training
         img_path = self.img_files[ds][files_index - start_index]
         label_path = self.label_files[ds][files_index - start_index]
 
-        flipped_img, flipped_labels = None, None
-        if self.unsup:
-            # Load image, flipped image, and ground truth detections for self-supervised learning
-            img, labels, img_path, (input_h, input_w), flipped_img = self.get_data(img_path, label_path, unsup=True)
+        img_dict, lbl_dict, img_path, (input_h, input_w) = self.get_data(img_path, label_path, self.unsup)
 
-            # Flip bboxes to match flipped image
-            flipped_labels = labels.copy()
-            if len(flipped_labels) > 0:
-                flipped_labels[:, 2] = 1 - flipped_labels[:, 2]
-
-        else:
-            # Load image with ground truth detections and object IDs for supervised learning
-            img, labels, img_path, (input_h, input_w), _ = self.get_data(img_path, label_path)
+        img, labels = img_dict['orig'], lbl_dict['orig']
+        flipped_img, flipped_labels = img_dict['flipped'], lbl_dict['flipped']
 
         # Offset object IDs with starting ID index for this dataset
         for i, _ in enumerate(labels):
@@ -481,6 +470,9 @@ class JointDataset(LoadImagesAndLabels):  # for training
         output_h = img.shape[1] // self.opt.down_ratio
         output_w = img.shape[2] // self.opt.down_ratio
         num_classes = self.num_classes
+
+        if labels.shape[0] != flipped_labels.shape[0]:
+            print(labels.shape[0], flipped_labels.shape[0])
         num_objs = labels.shape[0]
 
         # heat map representing object detections
@@ -643,9 +635,9 @@ class DetDataset(LoadImagesAndLabels):  # for training
         if os.path.isfile(label_path):
             labels0 = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
 
-        imgs, labels, img_path, (h, w), _ = self.get_data(img_path, label_path)
+        imgs, labels, img_path, (h, w) = self.get_data(img_path, label_path)
         for i, _ in enumerate(labels):
             if labels[i, 1] > -1:
                 labels[i, 1] += self.tid_start_index[ds]
 
-        return imgs, labels0, img_path, (h, w)
+        return imgs['orig'], labels0, img_path, (h, w)

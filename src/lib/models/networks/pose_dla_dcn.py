@@ -481,7 +481,7 @@ class DLASeg(nn.Module):
         super(DLASeg, self).__init__()
         assert down_ratio in [2, 4, 8, 16]
 
-        self.node_type = DLA_NODE['dcn']
+        self.node_type = DLA_NODE['conv']
 
         self.first_level = int(np.log2(down_ratio))
         self.last_level = last_level
