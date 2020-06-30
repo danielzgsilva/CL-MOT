@@ -544,11 +544,11 @@ class TripletLoss(nn.Module):
         # Tracks which image in the batch each embedding is from
         i_img_labels = []
         for img_num, obj_cnt in enumerate(i_obj_cnts):
-            i_img_labels.extend([img_num] * obj_cnt)
+            i_img_labels.extend([img_num] * obj_cnt.item())
 
         j_img_labels = []
         for img_num, obj_cnt in enumerate(j_obj_cnts):
-            j_img_labels.extend([img_num] * obj_cnt)
+            j_img_labels.extend([img_num] * obj_cnt.item())
 
         img_labels = torch.tensor(i_img_labels + j_img_labels).to(self.device)
 
