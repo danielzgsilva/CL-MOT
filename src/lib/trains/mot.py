@@ -92,24 +92,25 @@ class MotLoss(torch.nn.Module):
             id_head = _tranpose_and_gather_feat(output['id'], batch['ind'])
             id_head = id_head[batch['reg_mask'] > 0].contiguous()
             id_head = self.emb_scale * F.normalize(id_head)
+            id_target = batch['ids'][batch['reg_mask'] > 0]
 
             # Supervised loss on object ID predictions
             if opt.id_weight > 0 and not opt.unsup:
-                id_target = batch['ids'][batch['reg_mask'] > 0]
                 id_output = self.classifier(id_head).contiguous()
                 loss_results['id'] += self.IDLoss(id_output, id_target)
 
             # Take self-supervised loss using negative sample (flipped img)
             if opt.unsup and flipped_outputs is not None:
                 flipped_output = flipped_outputs[s]
-
                 flipped_id_head = _tranpose_and_gather_feat(flipped_output['id'], batch['flipped_ind'])
-                flipped_id_head = flipped_id_head[batch['reg_mask'] > 0].contiguous()
+                flipped_id_head = flipped_id_head[batch['flipped_reg_mask'] > 0].contiguous()
                 # flipped_id_head = self.emb_scale * F.normalize(flipped_id_head)
                 flipped_id_head = F.normalize(flipped_id_head)
+                flipped_id_target = batch['flipped_ids'][batch['flipped_reg_mask'] > 0]
 
                 # Compute loss between the positive and negative set of reid features
-                loss_results[opt.unsup_loss] = self.SelfSupLoss(id_head, flipped_id_head, batch['num_objs'])
+                loss_results[opt.unsup_loss] = self.SelfSupLoss(id_head, id_target, batch['num_objs'],
+                                                                flipped_id_head, flipped_id_target, batch['flipped_num_objs'])
 
         # Total supervised
         det_loss = opt.hm_weight * loss_results['hm'] + \

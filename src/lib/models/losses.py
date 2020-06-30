@@ -295,8 +295,9 @@ class NTXentLoss(torch.nn.Module):
         v = self._cosine_similarity(x.unsqueeze(1), y.unsqueeze(0))
         return v
 
-    def forward(self, zis, zjs, objs_per_img):
+    def forward(self, zis, i_targets, zjs, j_targets):
 
+        # NEED TO FIX THIS LOSS SO IT WORKS WHEN FLIPPED IMAGE HAS DIFFERENT NUMBER OF OBJECTS THAN ORIGINAL
         assert zis.size(0) == zjs.size(0)
 
         self.num_objects = zjs.size(0)
@@ -536,19 +537,23 @@ class TripletLoss(nn.Module):
 
         return triplet_loss
 
-    def forward(self, zis, zjs, objs_per_img):
-        assert zis.size(0) == zjs.size(0)
-        num_objects = zjs.size(0)
-
+    def forward(self, zis, i_labels, i_obj_cnts, zjs, j_labels, j_obj_cnts):
         embeddings = torch.cat([zis, zjs], dim=0)
-        labels = torch.tensor([i for i in range(num_objects)] * 2).to(self.device)
+        labels = torch.cat([i_labels, j_labels])
 
         # Tracks which image in the batch each embedding is from
-        image_labels = []
-        for img_num, obj_cnt in enumerate(objs_per_img):
-            image_labels.extend([img_num] * obj_cnt)
-        image_labels = torch.tensor(image_labels * 2).to(self.device)
+        i_img_labels = []
+        for img_num, obj_cnt in enumerate(i_obj_cnts):
+            i_img_labels.extend([img_num] * obj_cnt)
 
-        return self.loss(embeddings, labels, image_labels)
+        j_img_labels = []
+        for img_num, obj_cnt in enumerate(j_obj_cnts):
+            j_img_labels.extend([img_num] * obj_cnt)
+
+        img_labels = torch.tensor(i_img_labels + j_img_labels).to(self.device)
+
+        assert embeddings.size(0) == labels.size(0) == img_labels.size(0)
+
+        return self.loss(embeddings, labels, img_labels)
 
 

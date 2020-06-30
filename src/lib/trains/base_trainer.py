@@ -128,6 +128,7 @@ class BaseTrainer(object):
 
     def debug(self, batch, outputs, iter_id, dataset):
         opt = self.opt
+        ds = batch['meta']['dataset']
 
         # Ground truth detections
         dets_gt = batch['meta']['gt_det']
@@ -176,11 +177,11 @@ class BaseTrainer(object):
                                            dets['scores'][i, k], img_id='out_pred')
 
             # Ground truth
-            debugger.add_img(img, img_id='out_gt')
+            debugger.add_img(img, img_id='out_gt ({})'.format(ds))
             for k in range(len(dets_gt['scores'][i])):
                 if dets_gt['scores'][i][k] > opt.vis_thresh:
                     debugger.add_coco_bbox(dets_gt['bboxes'][i][k] * opt.down_ratio, dets_gt['clses'][i][k],
-                                           dets_gt['scores'][i][k], img_id='out_gt')
+                                           dets_gt['scores'][i][k], img_id='out_gt ({})'.format(ds))
 
             if flipped_img is not None and flipped_dets is not None:
                 # Flipped predictions
