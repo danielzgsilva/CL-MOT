@@ -10,7 +10,7 @@ def mkdirs(d):
 
 seq_root = os.path.join(os.getcwd(), 'data', 'MOT', 'MOT17', 'images', 'train')
 label_root = os.path.join(os.getcwd(), 'data', 'MOT', 'MOT17', 'labels_with_ids', 'train')
-#mkdirs(label_root)
+mkdirs(label_root)
 
 seqs = [s for s in os.listdir(seq_root) if s.endswith('SDP')]
 
