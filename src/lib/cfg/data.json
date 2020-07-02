@@ -2,6 +2,7 @@
     "root":"/data/MOT/",
     "train":
     {
+        "mot17":"./data/mot17.train",
         "caltech":"./data/caltech.train",
         "citypersons":"./data/citypersons.train",
         "cuhksysu":"./data/cuhksysu.train",

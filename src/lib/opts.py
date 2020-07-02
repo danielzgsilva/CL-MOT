@@ -152,7 +152,6 @@ class opts(object):
         self.parser.add_argument('--mse_loss', action='store_true',
                                  help='use mse loss or focal loss to train '
                                       'keypoint heatmaps.')
-
         self.parser.add_argument('--reg_loss', default='l1',
                                  help='regression loss: sl1 | l1 | l2')
         self.parser.add_argument('--hm_weight', type=float, default=1,
@@ -165,8 +164,6 @@ class opts(object):
                                  help='reid loss: ce')
         self.parser.add_argument('--id_weight', type=float, default=1,
                                  help='loss weight for id')
-        self.parser.add_argument('--reid_dim', type=int, default=512,
-                                 help='feature dim for reid embeddings')
         self.parser.add_argument('--unsup_loss',
                                  type=str,
                                  default='nt_xent',
@@ -174,6 +171,13 @@ class opts(object):
                                  choices=['nt_xent', 'triplet_all', 'triplet_hard'])
         self.parser.add_argument('--unsup_weight', type=float, default=1,
                                  help='weight for self-supervised loss on embeddings')
+        self.parser.add_argument('--reid_dim', type=int, default=1024,
+                                 help='feature dim for reid embeddings')
+        self.parser.add_argument('--mlp_dim', type=int, default=256,
+                                 help='feature dim for MLP layer')
+        self.parser.add_argument('--mlp_layer', action='store_true',
+                                 help='whether or not to apply MLP layer prior to '
+                                      'contrastive loss on embeddings')
 
         self.parser.add_argument('--norm_wh', action='store_true',
                                  help='L1(\hat(y) / y, 1) or L1(\hat(y), y)')

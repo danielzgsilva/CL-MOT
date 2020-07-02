@@ -21,8 +21,6 @@ class MotLoss(torch.nn.Module):
         super(MotLoss, self).__init__()
         self.opt = opt
         self.loss_states = loss_states
-        self.emb_dim = opt.reid_dim
-        self.nID = opt.nID
 
         # Loss for heatmap
         self.crit = torch.nn.MSELoss() if opt.mse_loss else FocalLoss()
@@ -39,8 +37,17 @@ class MotLoss(torch.nn.Module):
         # Supervised loss for object IDs
         self.IDLoss = nn.CrossEntropyLoss(ignore_index=-1)
 
-        # FC layer for supervised object ID prediction
-        self.classifier = nn.Linear(self.emb_dim, self.nID)
+        if opt.unsup and opt.mlp_layer:
+            # projection MLP layer for contrastive loss
+            self.MLP = nn.Sequential(
+                nn.Linear(opt.reid_dim, opt.reid_dim),
+                nn.ReLU(),
+                nn.Linear(opt.reid_dim, opt.mlp_dim)
+            )
+
+        else:
+            # FC layer for supervised object ID prediction
+            self.classifier = nn.Linear(opt.reid_dim, opt.nID)
 
         # Self supervised loss for object embeddings
         self.SelfSupLoss = NTXentLoss(opt.device, 0.5) if opt.unsup_loss == 'nt_xent' else \
@@ -51,7 +58,7 @@ class MotLoss(torch.nn.Module):
             raise ValueError('{} is not a supported self-supervised loss. '.format(opt.unsup_loss) + \
                              'Choose nt_xent, triplet_all, or triplet_hard')
 
-        self.emb_scale = math.sqrt(2) * math.log(self.nID - 1)
+        self.emb_scale = math.sqrt(2) * math.log(opt.nID - 1)
         self.s_det = nn.Parameter(-1.85 * torch.ones(1))
         self.s_id = nn.Parameter(-1.05 * torch.ones(1))
 
@@ -69,7 +76,6 @@ class MotLoss(torch.nn.Module):
             # Supervised loss on predicted heatmap
             if not opt.mse_loss:
                 output['hm'] = _sigmoid(output['hm'])
-
             loss_results['hm'] += self.crit(output['hm'], batch['hm']) / opt.num_stacks
 
             # Supervised loss on object sizes
@@ -89,36 +95,46 @@ class MotLoss(torch.nn.Module):
                 loss_results['off'] += self.crit_reg(output['reg'], batch['reg_mask'],
                                                      batch['ind'], batch['reg']) / opt.num_stacks
 
+            # Extract object embeddings
             id_head = _tranpose_and_gather_feat(output['id'], batch['ind'])
             id_head = id_head[batch['reg_mask'] > 0].contiguous()
-            id_head = self.emb_scale * F.normalize(id_head)
+            id_head = F.normalize(id_head)
+
+            # Get GT ID labels
             id_target = batch['ids'][batch['reg_mask'] > 0]
 
-            # Supervised loss on object ID predictions
+            # Supervised CE loss on object ID predictions
             if opt.id_weight > 0 and not opt.unsup:
+                id_head *= self.emb_scale
                 id_output = self.classifier(id_head).contiguous()
                 loss_results['id'] += self.IDLoss(id_output, id_target)
 
-            # Take self-supervised loss using negative sample (flipped img)
+            # Self-supervised loss using augmented sample
             if opt.unsup and flipped_outputs is not None:
                 flipped_output = flipped_outputs[s]
                 flipped_id_head = _tranpose_and_gather_feat(flipped_output['id'], batch['flipped_ind'])
                 flipped_id_head = flipped_id_head[batch['flipped_reg_mask'] > 0].contiguous()
-                # flipped_id_head = self.emb_scale * F.normalize(flipped_id_head)
                 flipped_id_head = F.normalize(flipped_id_head)
+
                 flipped_id_target = batch['flipped_ids'][batch['flipped_reg_mask'] > 0]
 
-                # Compute loss between the positive and negative set of reid features
-                loss_results[opt.unsup_loss] = self.SelfSupLoss(id_head, id_target, batch['num_objs'],
-                                                                flipped_id_head, flipped_id_target, batch['flipped_num_objs'])
+                # Feed embeddings through MLP layer
+                if opt.mlp_layer:
+                    id_head = self.MLP(id_head).contiguous()
+                    flipped_id_head = self.MLP(flipped_id_head).contiguous()
 
-        # Total supervised
+                # Compute contrastive loss between both sets of reid features
+                loss_results[opt.unsup_loss] += self.SelfSupLoss(id_head, id_target, batch['num_objs'],
+                                                                 flipped_id_head, flipped_id_target,
+                                                                 batch['flipped_num_objs'])
+
+        # Total supervised loss on detections
         det_loss = opt.hm_weight * loss_results['hm'] + \
                    opt.wh_weight * loss_results['wh'] + \
                    opt.off_weight * loss_results['off']
 
-        id_loss = torch.exp(-self.s_id) * loss_results['id'] if not opt.unsup else \
-            torch.exp(-self.s_id) * (loss_results[opt.unsup_loss])
+        # Loss on embeddings
+        id_loss = loss_results['id'] if not opt.unsup else loss_results[opt.unsup_loss]
 
         # Total of supervised and self-supervised losses on object embeddings
         total_loss = torch.exp(-self.s_det) * det_loss + \
@@ -158,7 +174,7 @@ class MotTrainer(BaseTrainer):
         reg = output['reg'] if self.opt.reg_offset else None
 
         dets, inds = mot_decode(output['hm'], output['wh'], reg=reg,
-                          cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
+                                cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
 
         dets = dets.detach().cpu().numpy().reshape(1, -1, dets.shape[2])
 
