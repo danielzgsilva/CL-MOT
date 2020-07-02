@@ -171,7 +171,7 @@ class opts(object):
                                  choices=['nt_xent', 'triplet_all', 'triplet_hard'])
         self.parser.add_argument('--unsup_weight', type=float, default=1,
                                  help='weight for self-supervised loss on embeddings')
-        self.parser.add_argument('--reid_dim', type=int, default=1024,
+        self.parser.add_argument('--reid_dim', type=int, default=512,
                                  help='feature dim for reid embeddings')
         self.parser.add_argument('--mlp_dim', type=int, default=256,
                                  help='feature dim for MLP layer')
