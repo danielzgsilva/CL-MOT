@@ -8,9 +8,10 @@ def mkdirs(d):
         os.makedirs(d)
 
 
-seq_root = './data/MOT/MOT15/images/train'
-label_root = './data/MOT/MOT15/labels_with_ids/train'
+seq_root = os.path.join(os.getcwd(), 'data', 'MOT', 'MOT15', 'images', 'train')
+label_root = os.path.join(os.getcwd(), 'data', 'MOT', 'MOT15', 'labels_with_ids', 'train')
 mkdirs(label_root)
+
 #seqs = [s for s in os.listdir(seq_root)]
 seqs = ['ADL-Rundle-6', 'ETH-Bahnhof', 'KITTI-13', 'PETS09-S2L1', 'TUD-Stadtmitte', 'ADL-Rundle-8', 'KITTI-17',
         'ETH-Pedcross2', 'ETH-Sunnyday', 'TUD-Campus', 'Venice-2']
