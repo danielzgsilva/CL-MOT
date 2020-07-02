@@ -8,12 +8,16 @@ def mkdirs(d):
         os.makedirs(d)
 
 
-seq_root = './data/MOT20/images/train'
-label_root = './data/MOT20/labels_with_ids/train'
-mkdirs(label_root)
-seqs = [s for s in os.listdir(seq_root)]
+seq_root = './data/MOT17/images/train'
+label_root = './data/MOT17/labels_with_ids/train'
+#mkdirs(label_root)
 
-tid_curr = 0
+#seqs = [s for s in os.listdir(seq_root)]
+seqs = [s for s in os.listdir(seq_root) if s.endswith('SDP')]
+
+print(seqs)
+
+'''tid_curr = 0
 tid_last = -1
 for seq in seqs:
     seq_info = open(osp.join(seq_root, seq, 'seqinfo.ini')).read()
@@ -40,4 +44,4 @@ for seq in seqs:
         label_str = '0 {:d} {:.6f} {:.6f} {:.6f} {:.6f}\n'.format(
             tid_curr, x / seq_width, y / seq_height, w / seq_width, h / seq_height)
         with open(label_fpath, 'a') as f:
-            f.write(label_str)
+            f.write(label_str)'''
