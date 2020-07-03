@@ -48,6 +48,8 @@ class MotLoss(torch.nn.Module):
         else:
             # FC layer for supervised object ID prediction
             self.classifier = nn.Linear(opt.reid_dim, opt.nID)
+            for param in self.classifier.parameters():
+                param.requires_grad = False
 
         # Self supervised loss for object embeddings
         self.SelfSupLoss = NTXentLoss(opt.device, 0.5) if opt.unsup_loss == 'nt_xent' else \
