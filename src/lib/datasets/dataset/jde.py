@@ -16,6 +16,7 @@ from torchvision.transforms import transforms as T
 from cython_bbox import bbox_overlaps as bbox_ious
 from opts import opts
 from utils.image import gaussian_radius, draw_umich_gaussian, draw_msra_gaussian
+from utils.image import letterbox, random_affine
 from utils.utils import xyxy2xywh, generate_anchors, xywh2xyxy, encode_delta
 
 
@@ -196,45 +197,45 @@ class LoadImagesAndLabels:  # for training
             # Load labels
             if os.path.isfile(label_path):
                 # [class, identity, x_center, y_center, width, height]
-                labels_ = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
+                lbls_ = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
 
-                if key == 'flipped' and len(labels_) > 0:
-                    labels_[:, 2] = 1 - labels_[:, 2]
+                if key == 'flipped' and len(lbls_) > 0:
+                    lbls_[:, 2] = 1 - lbls_[:, 2]
 
                 # Normalized xywh to pixel xyxy format
-                labels[key] = labels_.copy()
-                labels[key][:, 2] = ratio * w * (labels_[:, 2] - labels_[:, 4] / 2) + padw
-                labels[key][:, 3] = ratio * h * (labels_[:, 3] - labels_[:, 5] / 2) + padh
-                labels[key][:, 4] = ratio * w * (labels_[:, 2] + labels_[:, 4] / 2) + padw
-                labels[key][:, 5] = ratio * h * (labels_[:, 3] + labels_[:, 5] / 2) + padh
+                lbls = lbls_.copy()
+                lbls[:, 2] = ratio * w * (lbls_[:, 2] - lbls_[:, 4] / 2) + padw
+                lbls[:, 3] = ratio * h * (lbls_[:, 3] - lbls_[:, 5] / 2) + padh
+                lbls[:, 4] = ratio * w * (lbls_[:, 2] + lbls_[:, 4] / 2) + padw
+                lbls[:, 5] = ratio * h * (lbls_[:, 3] + lbls_[:, 5] / 2) + padh
             else:
-                labels[key] = np.array([])
+                lbls = np.array([])
 
             # If self-supervised training, we have no GT object identities,
             # So we use local identities for each object (0...N-1 for N objects in an image)
             if unsup:
-                num_objs = labels[key].shape[0]
-                labels[key][:, 1] = np.array([i for i in range(num_objs)])
+                num_objs = lbls.shape[0]
+                lbls[:, 1] = np.array([i for i in range(num_objs)])
 
             # Augment image and labels
             if self.augment:
-                img, labels[key], M = random_affine(img, labels[key], degrees=(-5, 5), translate=(0.10, 0.10), scale=(0.50, 1.20))
+                img, lbls, M = random_affine(img, lbls, degrees=(-5, 5), translate=(0.10, 0.10), scale=(0.50, 1.20))
 
-            nL = len(labels[key])
+            nL = len(lbls)
             if nL > 0:
                 # convert xyxy to xywh
-                labels[key][:, 2:6] = xyxy2xywh(labels[key][:, 2:6].copy())  # / height
-                labels[key][:, 2] /= width
-                labels[key][:, 3] /= height
-                labels[key][:, 4] /= width
-                labels[key][:, 5] /= height
+                lbls[:, 2:6] = xyxy2xywh(lbls[:, 2:6].copy())  # / height
+                lbls[:, 2] /= width
+                lbls[:, 3] /= height
+                lbls[:, 4] /= width
+                lbls[:, 5] /= height
 
             if not unsup and self.augment:
                 # random left-right flip during supervised learning
                 if random.random() > 0.5:
                     img = np.fliplr(img)
                     if nL > 0:
-                        labels[key][:, 2] = 1 - labels[key][:, 2]
+                        lbls[:, 2] = 1 - lbls[:, 2]
 
             img = np.ascontiguousarray(img[:, :, ::-1])  # BGR to RGB
 
@@ -242,6 +243,7 @@ class LoadImagesAndLabels:  # for training
                 img = self.transforms(img)
 
             images[key] = img
+            labels[key] = lbls
 
         if 'flipped' not in images:
             images['flipped'] = None
@@ -263,96 +265,6 @@ class LoadImagesAndLabels:  # for training
 
     def __len__(self):
         return self.nF  # number of images
-
-
-def letterbox(img, height=608, width=1088, color=(127.5, 127.5, 127.5)):
-    # resize a rectangular image to a padded rectangular
-
-    shape = img.shape[:2]  # shape = [height, width]
-    ratio = min(float(height) / shape[0], float(width) / shape[1])
-    new_shape = (round(shape[1] * ratio), round(shape[0] * ratio))  # new_shape = [width, height]
-    dw = (width - new_shape[0]) / 2  # width padding
-    dh = (height - new_shape[1]) / 2  # height padding
-    top, bottom = round(dh - 0.1), round(dh + 0.1)
-    left, right = round(dw - 0.1), round(dw + 0.1)
-    img = cv2.resize(img, new_shape, interpolation=cv2.INTER_AREA)  # resized, no border
-    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # padded rectangular
-    return img, ratio, dw, dh
-
-
-def random_affine(img, targets=None, degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-2, 2),
-                  borderValue=(127.5, 127.5, 127.5)):
-    # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
-    # https://medium.com/uruvideo/dataset-augmentation-with-random-homographies-a8f4b44830d4
-
-    border = 0  # width of added border (optional)
-    height = img.shape[0]
-    width = img.shape[1]
-
-    # Rotation and Scale
-    R = np.eye(3)
-    a = random.random() * (degrees[1] - degrees[0]) + degrees[0]
-    # a += random.choice([-180, -90, 0, 90])  # 90deg rotations added to small rotations
-    s = random.random() * (scale[1] - scale[0]) + scale[0]
-    R[:2] = cv2.getRotationMatrix2D(angle=a, center=(img.shape[1] / 2, img.shape[0] / 2), scale=s)
-
-    # Translation
-    T = np.eye(3)
-    T[0, 2] = (random.random() * 2 - 1) * translate[0] * img.shape[0] + border  # x translation (pixels)
-    T[1, 2] = (random.random() * 2 - 1) * translate[1] * img.shape[1] + border  # y translation (pixels)
-
-    # Shear
-    S = np.eye(3)
-    S[0, 1] = math.tan((random.random() * (shear[1] - shear[0]) + shear[0]) * math.pi / 180)  # x shear (deg)
-    S[1, 0] = math.tan((random.random() * (shear[1] - shear[0]) + shear[0]) * math.pi / 180)  # y shear (deg)
-
-    M = S @ T @ R  # Combined rotation matrix. ORDER IS IMPORTANT HERE!!
-    imw = cv2.warpPerspective(img, M, dsize=(width, height), flags=cv2.INTER_LINEAR,
-                              borderValue=borderValue)  # BGR order borderValue
-
-    # Return warped points also
-    if targets is not None:
-        if len(targets) > 0:
-            n = targets.shape[0]
-            points = targets[:, 2:6].copy()
-            area0 = (points[:, 2] - points[:, 0]) * (points[:, 3] - points[:, 1])
-
-            # warp points
-            xy = np.ones((n * 4, 3))
-            xy[:, :2] = points[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
-            xy = (xy @ M.T)[:, :2].reshape(n, 8)
-
-            # create new boxes
-            x = xy[:, [0, 2, 4, 6]]
-            y = xy[:, [1, 3, 5, 7]]
-            xy = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
-
-            # apply angle-based reduction
-            radians = a * math.pi / 180
-            reduction = max(abs(math.sin(radians)), abs(math.cos(radians))) ** 0.5
-            x = (xy[:, 2] + xy[:, 0]) / 2
-            y = (xy[:, 3] + xy[:, 1]) / 2
-            w = (xy[:, 2] - xy[:, 0]) * reduction
-            h = (xy[:, 3] - xy[:, 1]) * reduction
-            xy = np.concatenate((x - w / 2, y - h / 2, x + w / 2, y + h / 2)).reshape(4, n).T
-
-            # reject warped points outside of image
-            np.clip(xy[:, 0], 0, width, out=xy[:, 0])
-            np.clip(xy[:, 2], 0, width, out=xy[:, 2])
-            np.clip(xy[:, 1], 0, height, out=xy[:, 1])
-            np.clip(xy[:, 3], 0, height, out=xy[:, 3])
-            w = xy[:, 2] - xy[:, 0]
-            h = xy[:, 3] - xy[:, 1]
-            area = w * h
-            ar = np.maximum(w / (h + 1e-16), h / (w + 1e-16))
-            i = (w > 4) & (h > 4) & (area / (area0 + 1e-16) > 0.1) & (ar < 10)
-
-            targets = targets[i]
-            targets[:, 2:6] = xy[i]
-
-        return imw, targets, M
-    else:
-        return imw
 
 
 def collate_fn(batch):
@@ -493,6 +405,9 @@ class JointDataset(LoadImagesAndLabels):  # for training
         # contains object centers
         ind = np.zeros((self.max_objs,), dtype=np.int64)
 
+        # Offsetted object centers
+        off_ind = np.zeros((self.max_objs,), dtype=np.int64) if self.opt.off_center_vecs else None
+
         # mask representing the gt number of objects in this frame
         reg_mask = np.zeros((self.max_objs,), dtype=np.uint8)
 
@@ -529,6 +444,14 @@ class JointDataset(LoadImagesAndLabels):  # for training
                 reg_mask[k] = 1
                 ids[k] = label[1]
 
+                if off_ind is not None:
+                    w_offset = np.random.uniform(-w / 2, w / 2)
+                    h_offset = np.random.uniform(-h / 2, h / 2)
+                    off_ct = np.array([bbox[0] + w_offset, bbox[1] + h_offset], dtype=np.int32)
+                    off_ct[0] = np.clip(off_ct[0], 0, output_w - 1)
+                    off_ct[1] = np.clip(off_ct[1], 0, output_h - 1)
+                    off_ind[k] = off_ct[1] * output_w + off_ct[0]
+
                 gt_det['bboxes'].append(
                     np.array([ct[0] - w / 2, ct[1] - h / 2,
                               ct[0] + w / 2, ct[1] + h / 2], dtype=np.float32))
@@ -537,11 +460,14 @@ class JointDataset(LoadImagesAndLabels):  # for training
                 gt_det['cts'].append(ct)
 
         ret = {'img': img, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh, 'reg': reg, 'ids': ids}
+        if off_ind is not None:
+            ret['off_ind'] = off_ind
 
         if flipped_img is not None and flipped_labels is not None:
             flipped_ids = np.zeros((self.max_objs,), dtype=np.int64)
             flipped_ind = np.zeros((self.max_objs,), dtype=np.int64)
             flipped_reg_mask = np.zeros((self.max_objs,), dtype=np.uint8)
+            flipped_off_ind = np.zeros((self.max_objs,), dtype=np.int64) if self.opt.off_center_vecs else None
 
             gt_det['flipped_bboxes'] = []
             gt_det['flipped_cts'] = []
@@ -564,6 +490,14 @@ class JointDataset(LoadImagesAndLabels):  # for training
                     flipped_ids[k] = flipped_label[1]
                     flipped_reg_mask[k] = 1
 
+                    if flipped_off_ind is not None:
+                        w_offset = np.random.uniform(-w / 2, w / 2)
+                        h_offset = np.random.uniform(-h / 2, h / 2)
+                        off_ct = np.array([bbox[0] + w_offset, bbox[1] + h_offset], dtype=np.int32)
+                        off_ct[0] = np.clip(off_ct[0], 0, output_w - 1)
+                        off_ct[1] = np.clip(off_ct[1], 0, output_h - 1)
+                        flipped_off_ind[k] = off_ct[1] * output_w + off_ct[0]
+
                     gt_det['flipped_bboxes'].append(
                         np.array([ct[0] - w / 2, ct[1] - h / 2,
                                   ct[0] + w / 2, ct[1] + h / 2], dtype=np.float32))
@@ -573,6 +507,9 @@ class JointDataset(LoadImagesAndLabels):  # for training
             ret['flipped_ind'] = flipped_ind
             ret['flipped_ids'] = flipped_ids
             ret['flipped_reg_mask'] = flipped_reg_mask
+
+            if flipped_off_ind is not None:
+                ret['flipped_off_ind'] = flipped_off_ind
 
             ret['num_objs'] = torch.tensor([num_objs])
             ret['flipped_num_objs'] = torch.tensor([flipped_num_objs])

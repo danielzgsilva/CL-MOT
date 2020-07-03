@@ -537,18 +537,9 @@ class TripletLoss(nn.Module):
 
         return triplet_loss
 
-    def forward(self, zis, i_labels, i_obj_cnts, zjs, j_labels, j_obj_cnts):
+    def forward(self, zis, i_labels, i_img_labels, zjs, j_labels, j_img_labels):
         embeddings = torch.cat([zis, zjs], dim=0)
         labels = torch.cat([i_labels, j_labels])
-
-        # Tracks which image in the batch each embedding is from
-        i_img_labels = []
-        for img_num, obj_cnt in enumerate(i_obj_cnts):
-            i_img_labels.extend([img_num] * obj_cnt.item())
-
-        j_img_labels = []
-        for img_num, obj_cnt in enumerate(j_obj_cnts):
-            j_img_labels.extend([img_num] * obj_cnt.item())
 
         img_labels = torch.tensor(i_img_labels + j_img_labels).to(self.device)
 

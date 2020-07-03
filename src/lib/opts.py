@@ -36,8 +36,8 @@ class opts(object):
 
         self.parser.add_argument('--unsup',
                                  action='store_true',
-                                 help='train using unsupervised learning '
-                                      '(without ground truth object trackings)')
+                                 help='train using self-supervised learning '
+                                      '(without ground truth object IDs)')
 
         # system
         self.parser.add_argument('--gpus', default='0, 1',
@@ -178,6 +178,9 @@ class opts(object):
         self.parser.add_argument('--mlp_layer', action='store_true',
                                  help='whether or not to apply MLP layer prior to '
                                       'contrastive loss on embeddings')
+        self.parser.add_argument('--off_center_vecs', action='store_true',
+                                 help='extract feature embeddings from offsetted'
+                                      'center positions as positive samples')
 
         self.parser.add_argument('--norm_wh', action='store_true',
                                  help='L1(\hat(y) / y, 1) or L1(\hat(y), y)')

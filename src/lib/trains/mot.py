@@ -111,7 +111,7 @@ class MotLoss(torch.nn.Module):
                 id_output = self.classifier(id_head).contiguous()
                 loss_results['id'] += self.IDLoss(id_output, id_target)
 
-            # Self-supervised loss using augmented sample
+            # Self-supervised loss using contrastive learning
             if opt.unsup and flipped_outputs is not None:
                 flipped_output = flipped_outputs[s]
                 flipped_id_head = _tranpose_and_gather_feat(flipped_output['id'], batch['flipped_ind'])
@@ -120,15 +120,40 @@ class MotLoss(torch.nn.Module):
 
                 flipped_id_target = batch['flipped_ids'][batch['flipped_reg_mask'] > 0]
 
+                # Tracks which image in the batch each embedding is from
+                img_labels = []
+                for img_num, obj_cnt in enumerate(batch['num_objs']):
+                    img_labels.extend([img_num] * obj_cnt.item())
+
+                flipped_img_labels = []
+                for img_num, obj_cnt in enumerate(batch['flipped_num_objs']):
+                    flipped_img_labels.extend([img_num] * obj_cnt.item())
+
+                if opt.off_center_vecs:
+                    off_id_head = _tranpose_and_gather_feat(output['id'], batch['off_ind'])
+                    off_id_head = off_id_head[batch['reg_mask'] > 0].contiguous()
+                    off_id_head = F.normalize(off_id_head)
+
+                    id_head = torch.cat([id_head, off_id_head], dim=0)
+                    id_target = torch.cat([id_target] * 2, dim=0)
+                    img_labels *= 2
+
+                    off_flipped_id_head = _tranpose_and_gather_feat(flipped_output['id'], batch['flipped_off_ind'])
+                    off_flipped_id_head = off_flipped_id_head[batch['flipped_reg_mask'] > 0].contiguous()
+                    off_flipped_id_head = F.normalize(off_flipped_id_head)
+
+                    flipped_id_head = torch.cat([flipped_id_head, off_flipped_id_head], dim=0)
+                    flipped_id_target = torch.cat([flipped_id_target] * 2, dim=0)
+                    flipped_img_labels *= 2
+
                 # Feed embeddings through MLP layer
                 if opt.mlp_layer:
                     id_head = self.MLP(id_head).contiguous()
                     flipped_id_head = self.MLP(flipped_id_head).contiguous()
 
                 # Compute contrastive loss between both sets of reid features
-                loss_results[opt.unsup_loss] += self.SelfSupLoss(id_head, id_target, batch['num_objs'],
-                                                                 flipped_id_head, flipped_id_target,
-                                                                 batch['flipped_num_objs'])
+                loss_results[opt.unsup_loss] += self.SelfSupLoss(id_head, id_target, img_labels,
+                                                                 flipped_id_head, flipped_id_target, flipped_img_labels)
 
         # Total supervised loss on detections
         det_loss = opt.hm_weight * loss_results['hm'] + \
