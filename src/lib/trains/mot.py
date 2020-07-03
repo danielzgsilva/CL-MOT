@@ -59,8 +59,8 @@ class MotLoss(torch.nn.Module):
                              'Choose nt_xent, triplet_all, or triplet_hard')
 
         self.emb_scale = math.sqrt(2) * math.log(opt.nID - 1)
-        self.s_det = nn.Parameter(-1.85 * torch.ones(1))
-        self.s_id = nn.Parameter(-1.05 * torch.ones(1))
+        self.s_det = nn.Parameter(-1.85 * torch.ones(1), requires_grad=False)
+        self.s_id = nn.Parameter(-1.05 * torch.ones(1), requires_grad=False)
 
     def forward(self, output_dict, batch):
         opt = self.opt
