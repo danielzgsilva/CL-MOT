@@ -445,12 +445,15 @@ class JointDataset(LoadImagesAndLabels):  # for training
                 ids[k] = label[1]
 
                 if off_ind is not None:
-                    w_offset = np.random.uniform(-w / 2, w / 2)
+                    w_offset = np.random.uniform(-w / 4, w / 4)
                     h_offset = np.random.uniform(-h / 2, h / 2)
                     off_ct = np.array([bbox[0] + w_offset, bbox[1] + h_offset], dtype=np.int32)
                     off_ct[0] = np.clip(off_ct[0], 0, output_w - 1)
                     off_ct[1] = np.clip(off_ct[1], 0, output_h - 1)
                     off_ind[k] = off_ct[1] * output_w + off_ct[0]
+
+                    if self.opt.debug > 0:
+                        draw_gaussian(hm[cls_id], off_ct, radius)
 
                 gt_det['bboxes'].append(
                     np.array([ct[0] - w / 2, ct[1] - h / 2,
@@ -471,6 +474,8 @@ class JointDataset(LoadImagesAndLabels):  # for training
 
             gt_det['flipped_bboxes'] = []
             gt_det['flipped_cts'] = []
+            gt_det['flipped_scores'] = []
+            gt_det['flipped_clses'] = []
 
             flipped_num_objs = flipped_labels.shape[0]
             for k in range(flipped_num_objs):
@@ -491,7 +496,7 @@ class JointDataset(LoadImagesAndLabels):  # for training
                     flipped_reg_mask[k] = 1
 
                     if flipped_off_ind is not None:
-                        w_offset = np.random.uniform(-w / 2, w / 2)
+                        w_offset = np.random.uniform(-w / 4, w / 4)
                         h_offset = np.random.uniform(-h / 2, h / 2)
                         off_ct = np.array([bbox[0] + w_offset, bbox[1] + h_offset], dtype=np.int32)
                         off_ct[0] = np.clip(off_ct[0], 0, output_w - 1)
@@ -502,6 +507,9 @@ class JointDataset(LoadImagesAndLabels):  # for training
                         np.array([ct[0] - w / 2, ct[1] - h / 2,
                                   ct[0] + w / 2, ct[1] + h / 2], dtype=np.float32))
                     gt_det['flipped_cts'].append(ct)
+                    gt_det['flipped_scores'].append(1)
+                    gt_det['flipped_clses'].append(int(flipped_label[0]))
+
 
             ret['flipped_img'] = flipped_img
             ret['flipped_ind'] = flipped_ind

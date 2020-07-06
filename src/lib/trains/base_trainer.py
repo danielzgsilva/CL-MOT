@@ -182,11 +182,11 @@ class BaseTrainer(object):
                                            dets['scores'][i, k], img_id='out_pred')
 
             # Ground truth
-            debugger.add_img(img, img_id='out_gt ({})'.format(ds))
+            debugger.add_img(img, img_id='out_gt')
             for k in range(len(dets_gt['scores'][i])):
                 if dets_gt['scores'][i][k] > opt.vis_thresh:
                     debugger.add_coco_bbox(dets_gt['bboxes'][i][k] * opt.down_ratio, dets_gt['clses'][i][k],
-                                           dets_gt['scores'][i][k], img_id='out_gt ({})'.format(ds))
+                                           dets_gt['scores'][i][k], img_id='out_gt')
 
             if flipped_img is not None and flipped_dets is not None:
                 # Flipped predictions
@@ -199,10 +199,13 @@ class BaseTrainer(object):
 
                 # Flipped ground truth
                 debugger.add_img(flipped_img, img_id='flipped_gt')
-                for k in range(len(dets_gt['scores'][i])):
-                    if dets_gt['scores'][i][k] > opt.vis_thresh:
-                        debugger.add_coco_bbox(dets_gt['flipped_bboxes'][i][k] * opt.down_ratio, dets_gt['clses'][i][k],
-                                               dets_gt['scores'][i][k], img_id='flipped_gt')
+                for k in range(len(dets_gt['flipped_scores'][i])):
+                    if dets_gt['flipped_scores'][i][k] > opt.vis_thresh:
+                        debugger.add_coco_bbox(dets_gt['flipped_bboxes'][i][k] * opt.down_ratio,
+                                               dets_gt['flipped_clses'][i][k],
+                                               dets_gt['flipped_scores'][i][k], img_id='flipped_gt')
+
+            debugger.add_dataset_tag(ds[i])
 
             if opt.debug == 4:
                 debugger.save_all_imgs(opt.debug_dir, prefix='{}'.format(iter_id))

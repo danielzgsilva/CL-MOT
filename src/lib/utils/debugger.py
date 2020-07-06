@@ -3,6 +3,7 @@ import time
 import numpy as np
 import cv2
 
+
 class Debugger(object):
     def __init__(self, opt, dataset):
         self.opt = opt
@@ -10,9 +11,9 @@ class Debugger(object):
         self.theme = opt.debugger_theme
         self.plt = plt
         self.with_3d = False
-        #self.names = dataset.class_name
+        # self.names = dataset.class_name
         self.names = ['person']
-        #self.out_size = 384 if opt.dataset == 'kitti' else 512
+        # self.out_size = 384 if opt.dataset == 'kitti' else 512
         self.cnt = 0
         colors = [(color_list[i]).astype(np.uint8) for i in range(len(color_list))]
         while len(colors) < len(self.names):
@@ -133,7 +134,6 @@ class Debugger(object):
             # fontsize = 0.8
         if not self.opt.not_show_bbox:
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font = cv2.FONT_HERSHEY_SIMPLEX
             cat_size = cv2.getTextSize(txt, font, fontsize, thickness)[0]
             if not no_bbox:
                 cv2.rectangle(
@@ -146,6 +146,15 @@ class Debugger(object):
                               (bbox[0] + cat_size[0], bbox[1]), c, -1)
                 cv2.putText(self.imgs[img_id], txt, (bbox[0], bbox[1] - thickness - 1),
                             font, fontsize, (0, 0, 0), thickness=1, lineType=cv2.LINE_AA)
+
+    def add_dataset_tag(self, dataset):
+        thickness = 1
+        fontsize = 0.8 if self.opt.qualitative else 0.5
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        for img_id in self.imgs:
+            cv2.putText(self.imgs[img_id], dataset, (5, 10),
+                        font, fontsize, (0, 0, 0), thickness)
 
     def add_tracking_id(self, ct, tracking_id, img_id='default'):
         txt = '{}'.format(tracking_id)
