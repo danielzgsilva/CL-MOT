@@ -100,9 +100,11 @@ def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), 
         output_dir = os.path.join(data_root, '..', 'outputs', exp_name, seq) if save_images or save_videos else None
         logger.info('start seq: {}'.format(seq))
         dataloader = datasets.LoadImages(osp.join(data_root, seq, 'img1'), opt.img_size)
+
         result_filename = os.path.join(result_root, '{}.txt'.format(seq))
         meta_info = open(os.path.join(data_root, seq, 'seqinfo.ini')).read()
         frame_rate = int(meta_info[meta_info.find('frameRate') + 10:meta_info.find('\nseqLength')])
+
         nf, ta, tc = eval_seq(opt, dataloader, data_type, result_filename,
                               save_dir=output_dir, show_image=show_image, frame_rate=frame_rate)
         n_frame += nf
@@ -113,10 +115,13 @@ def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), 
         logger.info('Evaluate seq: {}'.format(seq))
         evaluator = Evaluator(data_root, seq, data_type)
         accs.append(evaluator.eval_file(result_filename))
+
         if save_videos:
             output_video_path = osp.join(output_dir, '{}.mp4'.format(seq))
             cmd_str = 'ffmpeg -f image2 -i {}/%05d.jpg -c:v copy {}'.format(output_dir, output_video_path)
+
             os.system(cmd_str)
+
     timer_avgs = np.asarray(timer_avgs)
     timer_calls = np.asarray(timer_calls)
     all_time = np.dot(timer_avgs, timer_calls)
@@ -127,6 +132,7 @@ def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), 
     metrics = mm.metrics.motchallenge_metrics
     mh = mm.metrics.create()
     summary = Evaluator.get_summary(accs, seqs, metrics)
+
     strsummary = mm.io.render_summary(
         summary,
         formatters=mh.formatters,
@@ -226,10 +232,13 @@ if __name__ == '__main__':
         data_root = os.path.join(opt.data_dir, 'MOT20/images/test')
     seqs = [seq.strip() for seq in seqs_str.split()]
 
+    if opt.exp_id == 'default':
+        opt.exp_id = 'MOT15_val_all_dla34'
+
     main(opt,
          data_root=data_root,
          seqs=seqs,
-         exp_name='MOT15_val_all_dla34',
-         show_image=False,
-         save_images=False,
-         save_videos=False)
+         exp_name=opt.exp_id,
+         show_image=opt.show_image,
+         save_images=opt.save_images,
+         save_videos=opt.save_videos)

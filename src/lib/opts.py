@@ -148,6 +148,13 @@ class opts(object):
         self.parser.add_argument('--output-format', type=str, default='video', help='video or text')
         self.parser.add_argument('--output-root', type=str, default='../results', help='expected output root path')
 
+        self.parser.add_argument('--show_image', action='store_true',
+                                 help='show images during tracking inference time')
+        self.parser.add_argument('--save_images', action='store_true',
+                                 help='save images during tracking inference time')
+        self.parser.add_argument('--save_videos', action='store_true',
+                                 help='save videos during tracking inference time')
+
         # loss
         self.parser.add_argument('--mse_loss', action='store_true',
                                  help='use mse loss or focal loss to train '
