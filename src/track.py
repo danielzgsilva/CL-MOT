@@ -192,7 +192,21 @@ if __name__ == '__main__':
                       MOT17-07-SDP
                       MOT17-08-SDP
                       MOT17-12-SDP
-                      MOT17-14-SDP'''
+                      MOT17-14-SDP
+                      MOT17-01-DPM
+                      MOT17-03-DPM
+                      MOT17-06-DPM
+                      MOT17-07-DPM
+                      MOT17-08-DPM
+                      MOT17-12-DPM
+                      MOT17-14-DPM
+                      MOT17-01-FRCNN
+                      MOT17-03-FRCNN
+                      MOT17-06-FRCNN
+                      MOT17-07-FRCNN
+                      MOT17-08-FRCNN
+                      MOT17-12-FRCNN
+                      MOT17-14-FRCNN'''
         data_root = os.path.join(opt.data_dir, 'MOT17/images/test')
     if opt.val_mot17:
         seqs_str = '''MOT17-02-SDP
@@ -201,7 +215,21 @@ if __name__ == '__main__':
                       MOT17-09-SDP
                       MOT17-10-SDP
                       MOT17-11-SDP
-                      MOT17-13-SDP'''
+                      MOT17-13-SDP
+                      MOT17-02-DPM
+                      MOT17-04-DPM
+                      MOT17-05-DPM
+                      MOT17-09-DPM
+                      MOT17-10-DPM
+                      MOT17-11-DPM
+                      MOT17-13-DPM
+                      MOT17-02-FRCNN
+                      MOT17-04-FRCNN
+                      MOT17-05-FRCNN
+                      MOT17-09-FRCNN
+                      MOT17-10-FRCNN
+                      MOT17-11-FRCNN
+                      MOT17-13-FRCNN'''
         data_root = os.path.join(opt.data_dir, 'MOT17/images/train')
     if opt.val_mot15:
         seqs_str = '''KITTI-13
