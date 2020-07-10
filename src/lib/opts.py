@@ -118,6 +118,23 @@ class opts(object):
                                  help='include validation in training and '
                                       'test on test set')
 
+        self.parser.add_argument('--reid_dim', type=int, default=512,
+                                 help='feature dim for reid embeddings')
+        self.parser.add_argument('--mlp_dim', type=int, default=256,
+                                 help='feature dim for MLP layer')
+        self.parser.add_argument('--mlp_layer', action='store_true',
+                                 help='whether or not to apply MLP layer prior to '
+                                      'contrastive loss on embeddings')
+
+        self.parser.add_argument('--off_center_vecs', action='store_true',
+                                 help='extract feature embeddings from offsetted'
+                                      'center positions as positive samples')
+        self.parser.add_argument('--pre_img', action='store_true',
+                                 help='Use previous frame as contrastive sample'
+                                      'during self-supervised training')
+        self.parser.add_argument('--bbox_aug', action='store_true',
+                                 help='apply object level augmentations during training')
+
         # test
         self.parser.add_argument('--K', type=int, default=128,
                                  help='max number of output objects.')
@@ -178,16 +195,6 @@ class opts(object):
                                  choices=['nt_xent', 'triplet_all', 'triplet_hard'])
         self.parser.add_argument('--unsup_weight', type=float, default=1,
                                  help='weight for self-supervised loss on embeddings')
-        self.parser.add_argument('--reid_dim', type=int, default=512,
-                                 help='feature dim for reid embeddings')
-        self.parser.add_argument('--mlp_dim', type=int, default=256,
-                                 help='feature dim for MLP layer')
-        self.parser.add_argument('--mlp_layer', action='store_true',
-                                 help='whether or not to apply MLP layer prior to '
-                                      'contrastive loss on embeddings')
-        self.parser.add_argument('--off_center_vecs', action='store_true',
-                                 help='extract feature embeddings from offsetted'
-                                      'center positions as positive samples')
 
         self.parser.add_argument('--norm_wh', action='store_true',
                                  help='L1(\hat(y) / y, 1) or L1(\hat(y), y)')

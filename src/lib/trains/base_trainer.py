@@ -169,6 +169,16 @@ class BaseTrainer(object):
                 flipped_img = batch['flipped_img'][i].detach().cpu().numpy().transpose(1, 2, 0)
                 flipped_img = np.clip(flipped_img * 255., 0, 255).astype(np.uint8)[:, :, ::-1] # RGB to BGR
 
+            pre_img = None
+            if 'pre_img' in batch:
+                pre_img = batch['pre_img'][i].detach().cpu().numpy().transpose(1, 2, 0)
+                pre_img = np.clip(pre_img * 255., 0, 255).astype(np.uint8)[:, :, ::-1]  # RGB to BGR
+
+            pre_flipped_img = None
+            if 'pre_flipped_img' in batch:
+                pre_flipped_img = batch['pre_flipped_img'][i].detach().cpu().numpy().transpose(1, 2, 0)
+                pre_flipped_img = np.clip(pre_flipped_img * 255., 0, 255).astype(np.uint8)[:, :, ::-1]  # RGB to BGR
+
             pred = debugger.gen_colormap(output['hm'][i].detach().cpu().numpy())
             gt = debugger.gen_colormap(batch['hm'][i].detach().cpu().numpy())
             debugger.add_blend_img(img, pred, 'pred_hm')
@@ -186,7 +196,10 @@ class BaseTrainer(object):
             for k in range(len(dets_gt['scores'][i])):
                 if dets_gt['scores'][i][k] > opt.vis_thresh:
                     debugger.add_coco_bbox(dets_gt['bboxes'][i][k] * opt.down_ratio, dets_gt['clses'][i][k],
-                                           dets_gt['scores'][i][k], img_id='out_gt')
+                                           dets_gt['ids'][i][k], img_id='out_gt', gt=True)
+
+            img_tag = str(ds[i]) + ' - ' + str(batch['meta']['img_path'][i])
+            debugger.add_dataset_tag(img_tag, ['out_gt', 'out_pred', 'gt_hm', 'pred_hm'])
 
             if flipped_img is not None and flipped_dets is not None:
                 # Flipped predictions
@@ -203,9 +216,33 @@ class BaseTrainer(object):
                     if dets_gt['flipped_scores'][i][k] > opt.vis_thresh:
                         debugger.add_coco_bbox(dets_gt['flipped_bboxes'][i][k] * opt.down_ratio,
                                                dets_gt['flipped_clses'][i][k],
-                                               dets_gt['flipped_scores'][i][k], img_id='flipped_gt')
+                                               dets_gt['flipped_ids'][i][k], img_id='flipped_gt', gt=True)
 
-            debugger.add_dataset_tag(ds[i])
+                debugger.add_dataset_tag(img_tag, ['flipped_pred', 'flipped_gt'])
+
+            if pre_img is not None:
+                # t-1 ground truth
+                debugger.add_img(pre_img, img_id='prev_gt')
+                for k in range(len(dets_gt['pre_scores'][i])):
+                    if dets_gt['pre_scores'][i][k] > opt.vis_thresh:
+                        debugger.add_coco_bbox(dets_gt['pre_bboxes'][i][k] * opt.down_ratio,
+                                               dets_gt['pre_clses'][i][k],
+                                               dets_gt['pre_ids'][i][k], img_id='prev_gt', gt=True)
+
+                pre_img_tag = str(ds[i]) + ' - ' + str(batch['meta']['pre_img_path'][i])
+                debugger.add_dataset_tag(pre_img_tag, ['prev_gt'])
+
+            if pre_flipped_img is not None:
+                # t-1 flipped ground truth
+                debugger.add_img(pre_flipped_img, img_id='prev_flipped_gt')
+                for k in range(len(dets_gt['pre_flipped_scores'][i])):
+                    if dets_gt['pre_flipped_scores'][i][k] > opt.vis_thresh:
+                        debugger.add_coco_bbox(dets_gt['pre_flipped_bboxes'][i][k] * opt.down_ratio,
+                                               dets_gt['pre_flipped_clses'][i][k],
+                                               dets_gt['pre_flipped_ids'][i][k], img_id='prev_flipped_gt', gt=True)
+
+                pre_img_tag = str(ds[i]) + ' - ' + str(batch['meta']['pre_img_path'][i])
+                debugger.add_dataset_tag(pre_img_tag, ['prev_flipped_gt'])
 
             if opt.debug == 4:
                 debugger.save_all_imgs(opt.debug_dir, prefix='{}'.format(iter_id))

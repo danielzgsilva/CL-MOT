@@ -42,10 +42,12 @@ def main(opt):
           '\tSelf-supervised training: {}\n\tGPUs: {}\n'
           '\tModel: {}\n\tInput size: {}\n\tBatch size: {}\n\tChunk size: {}\n'
           '\tEpochs: {}\n\t''Learning rate: {}\n\tLR Steps: {}\n'
-          '\tHeads: {}\n\tHead Conv: {}\n\t''Debug level: {}\n'.
+          '\tHeads: {}\n\tHead Conv: {}\n\t''Debug level: {}\n'
+          '\tOffsetted center embeddings: {}\n\tPrevious frame training: {}\n\t''Object level augmentations: {}\n'.
           format(opt.exp_id, opt.save_dir, opt.unsup, opt.gpus, opt.arch.capitalize(), opt.img_size,
                  opt.batch_size, opt.chunk_sizes, opt.num_epochs, opt.lr,
-                 opt.lr_step, opt.heads, opt.head_conv, opt.debug))
+                 opt.lr_step, opt.heads, opt.head_conv, opt.debug,
+                 opt.off_center_vecs, opt.pre_img, opt.bbox_aug))
 
     logger = Logger(opt)
 

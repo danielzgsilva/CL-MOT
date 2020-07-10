@@ -110,7 +110,7 @@ class Debugger(object):
         return c
 
     def add_coco_bbox(self, bbox, cat, conf=1, show_txt=True,
-                      no_bbox=False, img_id='default'):
+                      no_bbox=False, img_id='default', gt=False):
         bbox = np.array(bbox, dtype=np.int32)
         cat = int(cat)
         c = self.colors[cat][0][0].tolist()
@@ -118,7 +118,7 @@ class Debugger(object):
             c = (255 - np.array(c)).tolist()
         if self.opt.tango_color:
             c = (255 - tango_color_dark[cat][0][0]).tolist()
-        if conf >= 1:
+        if gt:
             ID = int(conf) if not self.opt.not_show_number else ''
             txt = '{}{}'.format(self.names[cat], ID)
         else:
@@ -136,9 +136,8 @@ class Debugger(object):
             font = cv2.FONT_HERSHEY_SIMPLEX
             cat_size = cv2.getTextSize(txt, font, fontsize, thickness)[0]
             if not no_bbox:
-                cv2.rectangle(
-                    self.imgs[img_id], (bbox[0], bbox[1]), (bbox[2], bbox[3]),
-                    c, thickness)
+                cv2.rectangle(self.imgs[img_id], (bbox[0], bbox[1]),
+                              (bbox[2], bbox[3]), c, thickness)
 
             if show_txt:
                 cv2.rectangle(self.imgs[img_id],
@@ -147,14 +146,19 @@ class Debugger(object):
                 cv2.putText(self.imgs[img_id], txt, (bbox[0], bbox[1] - thickness - 1),
                             font, fontsize, (0, 0, 0), thickness=1, lineType=cv2.LINE_AA)
 
-    def add_dataset_tag(self, dataset):
-        thickness = 1
+    def add_dataset_tag(self, dataset, img_ids=None):
+        thickness = 2
         fontsize = 0.8 if self.opt.qualitative else 0.5
         font = cv2.FONT_HERSHEY_SIMPLEX
 
-        for img_id in self.imgs:
-            cv2.putText(self.imgs[img_id], dataset, (5, 10),
-                        font, fontsize, (0, 0, 0), thickness)
+        if img_ids is None:
+            for img_id in self.imgs:
+                cv2.putText(self.imgs[img_id], dataset, (5, 20),
+                            font, fontsize, (0, 0, 0), thickness)
+        else:
+            for img_id in img_ids:
+                cv2.putText(self.imgs[img_id], dataset, (5, 20),
+                            font, fontsize, (0, 0, 0), thickness)
 
     def add_tracking_id(self, ct, tracking_id, img_id='default'):
         txt = '{}'.format(tracking_id)
