@@ -271,8 +271,8 @@ class LoadImagesAndLabels:  # for training
                 lbls[:, 5] = ratio * h * (labels[key][:, 3] + labels[key][:, 5] / 2) + padh
 
             # Augment image and labels
-            '''if self.augment:
-                img, lbls, M = random_affine(img, lbls, degrees=(-5, 5), translate=(0.10, 0.10), scale=(0.50, 1.20))'''
+            if self.augment:
+                img, lbls, M = random_affine(img, lbls, degrees=(-5, 5), translate=(0.10, 0.10), scale=(0.50, 1.20))
 
             if num_objs > 0:
                 # convert xyxy to xywh
