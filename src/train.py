@@ -17,7 +17,9 @@ from models.data_parallel import DataParallel
 from logger import Logger
 from datasets.dataset_factory import get_dataset
 from trains.train_factory import train_factory
+from utils.image import GaussianBlur
 import sys
+
 
 def main(opt):
     sys.path.append(os.getcwd())
@@ -33,8 +35,15 @@ def main(opt):
     # dataset_root = data_config['root']
     f.close()
 
+    s = 1
+    color_jitter = T.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
+    transforms = T.Compose([T.RandomApply([color_jitter], p=0.8),
+                            GaussianBlur(kernel_size=int(0.1 * opt.img_size[0])),
+                            T.ToTensor()])
     transforms = T.Compose([T.ToTensor()])
-    dataset = Dataset(opt, dataset_root, trainset_paths, (1088, 608), augment=True, transforms=transforms)
+
+    dataset = Dataset(opt, dataset_root, trainset_paths, opt.img_size,
+                      augment=True, transforms=transforms)
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
 
     print('Training Set Up:\n'
@@ -42,12 +51,12 @@ def main(opt):
           '\tSelf-supervised training: {}\n\tGPUs: {}\n'
           '\tModel: {}\n\tInput size: {}\n\tBatch size: {}\n\tChunk size: {}\n'
           '\tEpochs: {}\n\t''Learning rate: {}\n\tLR Steps: {}\n'
-          '\tHeads: {}\n\tHead Conv: {}\n\t''Debug level: {}\n'
+          '\tHeads: {}\n\tHead Conv: {}\n\tDebug level: {}\n\tMLP Layer: {}\n'
           '\tOffsetted center embeddings: {}\n\tPrevious frame training: {}\n\t''Object level augmentations: {}\n'.
           format(opt.exp_id, opt.save_dir, opt.unsup, opt.gpus, opt.arch.capitalize(), opt.img_size,
                  opt.batch_size, opt.chunk_sizes, opt.num_epochs, opt.lr,
                  opt.lr_step, opt.heads, opt.head_conv, opt.debug,
-                 opt.off_center_vecs, opt.pre_img, opt.bbox_aug))
+                 opt.mlp_layer, opt.off_center_vecs, opt.pre_img, opt.bbox_aug))
 
     logger = Logger(opt)
 

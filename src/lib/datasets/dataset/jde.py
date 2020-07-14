@@ -238,6 +238,9 @@ class LoadImagesAndLabels:  # for training
             h, w, _ = img.shape
 
             # Saturation and brightness augmentation by 50%
+            if unsup:
+                continue
+
             if self.augment:
                 fraction = 0.50
                 img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
