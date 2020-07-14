@@ -38,11 +38,11 @@ def main(opt):
     s = 1
     color_jitter = T.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
     transforms = T.Compose([T.RandomApply([color_jitter], p=0.8),
-                            GaussianBlur(kernel_size=int(0.1 * opt.img_size[0])),
+                            GaussianBlur(kernel_size=int(0.1 * 1088)),
                             T.ToTensor()])
     transforms = T.Compose([T.ToTensor()])
 
-    dataset = Dataset(opt, dataset_root, trainset_paths, opt.img_size,
+    dataset = Dataset(opt, dataset_root, trainset_paths, (1088, 608),
                       augment=True, transforms=transforms)
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
 
