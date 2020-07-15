@@ -70,6 +70,8 @@ class MotLoss(torch.nn.Module):
 
         outputs = output_dict['orig']
         flipped_outputs = output_dict['flipped'] if 'flipped' in output_dict else None
+        pre_outputs = output_dict['pre'] if 'pre' in output_dict else None
+        pre_flipped_outputs = output_dict['pre_flipped'] if 'pre_flipped' in output_dict else None
 
         # Take loss at each scale
         for s in range(opt.num_stacks):
@@ -128,6 +130,10 @@ class MotLoss(torch.nn.Module):
                 flipped_img_labels = []
                 for img_num, obj_cnt in enumerate(batch['flipped_num_objs']):
                     flipped_img_labels.extend([img_num] * obj_cnt.item())
+
+                # IMPLEMENT GATHER T-1 FEATURES AND FEED TO LOSS PROPERLY
+                if opt.pre_img:
+                    pass
 
                 if opt.off_center_vecs:
                     off_id_head = _tranpose_and_gather_feat(output['id'], batch['off_ind'])

@@ -29,6 +29,12 @@ class ModleWithLoss(torch.nn.Module):
         if 'flipped_img' in batch:
             outputs['flipped'] = self.model(batch['flipped_img'])
 
+        # Feed T-1 frame if available
+        if 'pre_img' in batch:
+            outputs['pre'] = self.model(batch['pre_img'])
+        if 'pre_flipped_img' in batch:
+            outputs['pre_flipped'] = self.model(batch['pre_flipped_img'])
+
         # Take loss
         loss, loss_stats = self.loss(outputs, batch)
 

@@ -215,26 +215,34 @@ class LoadImagesAndLabels:  # for training
                 labels['pre_flipped'] = self.flip_labels(labels['pre_orig'])
 
                 # Match bboxes in previous frame to the current frame's bboxes
-                # SHOULD LOOK INTO IAMGES BEING DIFFERENT SIZES FROM THE SAME DATASET
-                pre_xyxys = xywh2xyxy(labels['pre_orig'][:, 2:6])
-                xyxys = xywh2xyxy(labels['orig'][:, 2:6])
+                if len(labels['pre_orig']) > 0 and len(labels['orig']) > 0:
+                    pre_xyxys = xywh2xyxy(labels['pre_orig'][:, 2:6])
+                    xyxys = xywh2xyxy(labels['orig'][:, 2:6])
 
-                cost_mat = iou_distance(pre_xyxys, xyxys)
-                cost, pre_matches, cur_matches = lap.lapjv(cost_mat, extend_cost=True, cost_limit=0.25)
+                    cost_mat = iou_distance(pre_xyxys, xyxys)
+                    cost, pre_matches, cur_matches = lap.lapjv(cost_mat, extend_cost=True, cost_limit=0.25)
 
-                # Assign ID labels to previous frame bboxes based on IOU matching with current frame
-                for i, match in enumerate(pre_matches):
-                    labels['pre_orig'][i][1] = match
+                    # Assign ID labels to previous frame bboxes based on IOU matching with current frame
+                    keep = []
+                    for i, match in enumerate(pre_matches):
+                        if match != -1:
+                            keep.append(i)
+                            labels['pre_orig'][i][1] = match
+                    labels['pre_orig'] = labels['pre_orig'][keep, :]
 
-                # Match bboxes across the flipped images
-                pre_flipped_xyxys = xywh2xyxy(labels['pre_flipped'][:, 2:6])
-                flipped_xyxys = xywh2xyxy(labels['flipped'][:, 2:6])
+                    # Match bboxes across the flipped images
+                    pre_flipped_xyxys = xywh2xyxy(labels['pre_flipped'][:, 2:6])
+                    flipped_xyxys = xywh2xyxy(labels['flipped'][:, 2:6])
 
-                cost_mat = iou_distance(pre_flipped_xyxys, flipped_xyxys)
-                cost, pre_matches, cur_matches = lap.lapjv(cost_mat, extend_cost=True, cost_limit=0.25)
+                    cost_mat = iou_distance(pre_flipped_xyxys, flipped_xyxys)
+                    cost, pre_matches, cur_matches = lap.lapjv(cost_mat, extend_cost=True, cost_limit=0.25)
 
-                for i, match in enumerate(pre_matches):
-                    labels['pre_flipped'][i][1] = match
+                    keep = []
+                    for i, match in enumerate(pre_matches):
+                        if match != -1:
+                            keep.append(i)
+                            labels['pre_flipped'][i][1] = match
+                    labels['pre_flipped'] = labels['pre_flipped'][keep, :]
 
         for key, img in images.items():
             h, w, _ = img.shape
@@ -428,6 +436,95 @@ class JointDataset(LoadImagesAndLabels):  # for training
 
         return transforms
 
+    def get_prev_img_path(self, files_index, start_index, dataset):
+        cur_img_path = self.img_files[dataset][files_index - start_index]
+        cur_img_name = os.path.split(cur_img_path)[-1]
+
+        pre_img_path = None
+        pre_label_path = None
+
+        if dataset == 'mot17':
+            cur_img_num = int(cur_img_name.split('.')[0])
+
+            pre_img_num = cur_img_num
+            if pre_img_num == 1:
+                pre_img_num += 1
+            else:
+                pre_img_num -= 1
+
+            pre_img_name = '{:06}'.format(pre_img_num) + '.jpg'
+            pre_img_path = cur_img_path.replace(cur_img_name, pre_img_name)
+
+        elif dataset == 'caltech':
+            cur_img_num = int(cur_img_name.split('.')[0].split('_')[-1])
+
+            pre_img_num = cur_img_num
+            if pre_img_num == 0:
+                pre_img_num += 1
+            else:
+                pre_img_num -= 1
+
+            # fix this, must create name correctly with sequences
+            cur_suf = cur_img_name.split('_')[-1]
+            pre_suf = cur_suf.replace(str(cur_img_num), str(pre_img_num))
+            pre_img_name = cur_img_name.replace(cur_suf, pre_suf)
+            pre_img_path = cur_img_path.replace(cur_img_name, pre_img_name)
+
+        elif dataset == 'citypersons':
+
+            pre_img_path = cur_img_path
+
+        elif dataset == 'cuhksysu':
+
+            pre_img_path = cur_img_path
+
+        elif dataset == 'prw':
+            cur_img_num = int(cur_img_name.split('.')[0].split('_')[-1])
+
+            pre_img_num = cur_img_num
+            if pre_img_num == 1:
+                pre_img_num += 1
+            else:
+                pre_img_num -= 1
+
+            pre_img_name = cur_img_name.replace('{:06}'.format(cur_img_num), '{:06}'.format(pre_img_num))
+            pre_img_path = cur_img_path.replace(cur_img_name, pre_img_name)
+
+        elif dataset == 'eth':
+            cur_img_num = int(cur_img_name.split('_')[1])
+
+            pre_img_num = cur_img_num
+            if pre_img_num == 0:
+                pre_img_num += 1
+            else:
+                pre_img_num -= 1
+
+            pre_img_name = cur_img_name.replace('{:08}'.format(cur_img_num), '{:08}'.format(pre_img_num))
+            pre_img_path = cur_img_path.replace(cur_img_name, pre_img_name)
+
+        else:
+            raise ValueError('Sorry, the {} dataset is not supported by previous frame training')
+
+        pre_label_path = pre_img_path.replace('images', 'labels_with_ids'). \
+            replace('.png', '.txt'). \
+            replace('.jpg', '.txt')
+
+        if not os.path.isfile(pre_img_path) or not os.path.isfile(pre_label_path):
+            '''if os.path.isfile(pre_img_path):
+                print('Label file not found: {}'.format(pre_label_path))
+            else:
+                print('Image file not found: {}'.format(pre_img_path))'''
+
+            if files_index - start_index == 0:
+                pre_file_index = files_index + 1
+            else:
+                pre_file_index = files_index - 1
+
+            pre_img_path = self.img_files[dataset][pre_file_index - start_index]
+            pre_label_path = self.label_files[dataset][pre_file_index - start_index]
+
+        return pre_img_path, pre_label_path
+
     def add_to_dict(self, dict_, key, item):
         if item is not None:
             dict_[key] = item
@@ -537,22 +634,14 @@ class JointDataset(LoadImagesAndLabels):  # for training
                 ds = list(self.label_files.keys())[i]
                 start_index = c
 
-        # Get t-1 frame index
-        pre_img_path, pre_label_path = None, None
-        if self.opt.pre_img:
-            # Ensure t-1 frame is retrieved from correct dataset and sequence
-            if files_index == start_index:
-                pre_files_index = start_index
-                files_index = start_index + 1
-            else:
-                pre_files_index = files_index - 1
-
-            pre_img_path = self.img_files[ds][pre_files_index - start_index]
-            pre_label_path = self.label_files[ds][pre_files_index - start_index]
-
         # Get image and annotation file names
         img_path = self.img_files[ds][files_index - start_index]
         label_path = self.label_files[ds][files_index - start_index]
+
+        pre_img_path, pre_label_path = None, None
+        if self.opt.pre_img:
+            # Get file paths for previous frame in dataset
+            pre_img_path, pre_label_path = self.get_prev_img_path(files_index, start_index, ds)
 
         # Load images and labels
         img_dict, label_dict, img_path, _ = self.get_data(img_path, label_path,

@@ -28,7 +28,7 @@ def transform_preds(coords, center, scale, output_size):
 
 
 class GaussianBlur(object):
-    # Implements Gaussian blur as described in the SimCLR paper
+    # OpenCV Gaussian blur as pytorch augmentation
     def __init__(self, kernel_size, min=0.1, max=2.0):
         self.min = min
         self.max = max

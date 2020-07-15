@@ -134,8 +134,8 @@ class opts(object):
                                       'during self-supervised training')
         self.parser.add_argument('--bbox_aug', action='store_true',
                                  help='apply object level augmentations during training')
-        self.parser.add_argument('--torch_transform', action='store_true',
-                                 help='apply object level augmentations during training')
+
+        self.parser.add_argument('--torch_transform', action='store_true')
 
         # test
         self.parser.add_argument('--K', type=int, default=128,
