@@ -11,13 +11,15 @@ import json
 import numpy as np
 import torch
 import lap
+from PIL import Image
+
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms as T
 from cython_bbox import bbox_overlaps as bbox_ious
 
 from opts import opts
 from utils.image import gaussian_radius, draw_umich_gaussian, draw_msra_gaussian
-from utils.image import letterbox, random_affine
+from utils.image import letterbox, random_affine, GaussianBlur
 from utils.utils import xyxy2xywh, generate_anchors, xywh2xyxy, encode_delta
 from tracker.matching import iou_distance, linear_assignment
 
@@ -187,7 +189,7 @@ class LoadImagesAndLabels:  # for training
 
         return img
 
-    def get_data(self, img_path, label_path, pre_img_path=None, pre_label_path=None, unsup=False):
+    def get_data(self, img_path, label_path, pre_img_path=None, pre_label_path=None, unsup=False, pre_transforms=None):
         height = self.height
         width = self.width
 
@@ -237,11 +239,13 @@ class LoadImagesAndLabels:  # for training
         for key, img in images.items():
             h, w, _ = img.shape
 
-            # Saturation and brightness augmentation by 50%
-            if unsup:
-                continue
+            if self.opt.torch_transform and pre_transforms is not None:
+                img = Image.fromarray(img)
+                img = pre_transforms(img)
+                img = np.asarray(img)
 
-            if self.augment:
+            # Saturation and brightness augmentation by 50%
+            elif self.augment:
                 fraction = 0.50
                 img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
                 S = img_hsv[:, :, 1].astype(np.float32)
@@ -345,6 +349,8 @@ class JointDataset(LoadImagesAndLabels):  # for training
 
     def __init__(self, opt, root, paths, img_size=(1088, 608), augment=False, transforms=None):
         self.opt = opt
+        self.width = img_size[0]
+        self.height = img_size[1]
         self.img_files = OrderedDict()
         self.label_files = OrderedDict()
         self.img_num = OrderedDict()
@@ -354,6 +360,7 @@ class JointDataset(LoadImagesAndLabels):  # for training
 
         # Self supervised training flag
         self.unsup = opt.unsup
+        self.pre_transforms = self.get_transform_pipeline(s=1) if self.unsup else None
 
         # Get image and annotation file names
         for ds, path in paths.items():
@@ -413,6 +420,13 @@ class JointDataset(LoadImagesAndLabels):  # for training
         print('Total images: {}'.format(self.nF))
         print('Total identities: {}'.format(self.nID))
         print('=' * 100)
+
+    def get_transform_pipeline(self, s):
+        color_jitter = T.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
+        transforms = T.Compose([T.RandomApply([color_jitter], p=0.8),
+                                GaussianBlur(kernel_size=int(self.height * 0.1) + 1)])
+
+        return transforms
 
     def add_to_dict(self, dict_, key, item):
         if item is not None:
@@ -498,7 +512,7 @@ class JointDataset(LoadImagesAndLabels):  # for training
                         self.draw_gaussian(hm[cls_id], off_ct, radius)
 
                 gt_det[prepend + 'bboxes'].append(np.array([ct[0] - w / 2, ct[1] - h / 2,
-                                                  ct[0] + w / 2, ct[1] + h / 2], dtype=np.float32))
+                                                            ct[0] + w / 2, ct[1] + h / 2], dtype=np.float32))
                 gt_det[prepend + 'cts'].append(ct)
                 gt_det[prepend + 'scores'].append(1)
                 gt_det[prepend + 'clses'].append(cls_id)
@@ -542,7 +556,8 @@ class JointDataset(LoadImagesAndLabels):  # for training
 
         # Load images and labels
         img_dict, label_dict, img_path, _ = self.get_data(img_path, label_path,
-                                                          pre_img_path, pre_label_path, self.unsup)
+                                                          pre_img_path, pre_label_path,
+                                                          self.unsup, self.pre_transforms)
 
         img, labels = img_dict['orig'], label_dict['orig']
 

@@ -17,7 +17,6 @@ from models.data_parallel import DataParallel
 from logger import Logger
 from datasets.dataset_factory import get_dataset
 from trains.train_factory import train_factory
-from utils.image import GaussianBlur
 import sys
 
 
@@ -35,14 +34,9 @@ def main(opt):
     # dataset_root = data_config['root']
     f.close()
 
-    s = 1
-    color_jitter = T.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
-    transforms = T.Compose([T.RandomApply([color_jitter], p=0.8),
-                            GaussianBlur(kernel_size=int(0.1 * 1088)),
-                            T.ToTensor()])
+    img_size = (1088, 608)
     transforms = T.Compose([T.ToTensor()])
-
-    dataset = Dataset(opt, dataset_root, trainset_paths, (1088, 608),
+    dataset = Dataset(opt, dataset_root, trainset_paths, img_size,
                       augment=True, transforms=transforms)
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
 
