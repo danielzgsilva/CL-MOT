@@ -537,14 +537,11 @@ class TripletLoss(nn.Module):
 
         return triplet_loss
 
-    def forward(self, zis, i_labels, i_img_labels, zjs, j_labels, j_img_labels):
-        embeddings = torch.cat([zis, zjs], dim=0)
-        labels = torch.cat([i_labels, j_labels])
+    def forward(self, embeddings, id_labels, img_labels):
+        img_labels = torch.tensor(img_labels).to(self.device)
 
-        img_labels = torch.tensor(i_img_labels + j_img_labels).to(self.device)
+        assert embeddings.size(0) == id_labels.size(0) == img_labels.size(0)
 
-        assert embeddings.size(0) == labels.size(0) == img_labels.size(0)
-
-        return self.loss(embeddings, labels, img_labels)
+        return self.loss(embeddings, id_labels, img_labels)
 
 

@@ -24,6 +24,18 @@ class AverageMeter(object):
           self.avg = self.sum / self.count
 
 
+def create_img_labels(num_objs):
+    """
+    num_objs: length N tensor containing the number of objects
+    present in each image in a batch, where N is number of images in batch
+    """
+
+    img_labels = []
+    for img_num, obj_cnt in enumerate(num_objs):
+        img_labels.extend([img_num] * obj_cnt.item())
+
+    return img_labels
+
 def xyxy2xywh(x):
     # Convert bounding box format from [x1, y1, x2, y2] to [x, y, w, h]
     y = torch.zeros(x.shape) if x.dtype is torch.float32 else np.zeros(x.shape)

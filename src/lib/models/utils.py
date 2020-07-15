@@ -3,12 +3,20 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
+import torch.nn.functional as F
 
 
 def _sigmoid(x):
     y = torch.clamp(x.sigmoid_(), min=1e-4, max=1 - 1e-4)
     return y
 
+
+def extract_feats(feature_map, centers, mask):
+    id_head = _tranpose_and_gather_feat(feature_map, centers)
+    id_head = id_head[mask > 0].contiguous()
+    id_head = F.normalize(id_head)
+
+    return id_head
 
 def _gather_feat(feat, ind, mask=None):
     dim = feat.size(2)

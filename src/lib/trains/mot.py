@@ -7,11 +7,13 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from models.decode import mot_decode
 from models.losses import FocalLoss, TripletLoss, NTXentLoss
 from models.losses import RegL1Loss, RegLoss, NormRegL1Loss, RegWeightedL1Loss
-from models.utils import _sigmoid, _tranpose_and_gather_feat
+from models.utils import _sigmoid, _tranpose_and_gather_feat, extract_feats
 from utils.post_process import ctdet_post_process
+from utils.utils import create_img_labels
 
 from .base_trainer import BaseTrainer
 
@@ -100,66 +102,77 @@ class MotLoss(torch.nn.Module):
                                                      batch['ind'], batch['reg']) / opt.num_stacks
 
             # Extract object embeddings
-            id_head = _tranpose_and_gather_feat(output['id'], batch['ind'])
-            id_head = id_head[batch['reg_mask'] > 0].contiguous()
-            id_head = F.normalize(id_head)
-
+            id_head = extract_feats(output['id'], batch['ind'], batch['reg_mask'])
             # Get GT ID labels
-            id_target = batch['ids'][batch['reg_mask'] > 0]
+            id_labels = batch['ids'][batch['reg_mask'] > 0]
 
             # Supervised CE loss on object ID predictions
             if opt.id_weight > 0 and not opt.unsup:
                 id_head *= self.emb_scale
                 id_output = self.classifier(id_head).contiguous()
-                loss_results['id'] += self.IDLoss(id_output, id_target)
+                loss_results['id'] += self.IDLoss(id_output, id_labels)
 
             # Self-supervised loss using contrastive learning
             if opt.unsup and flipped_outputs is not None:
                 flipped_output = flipped_outputs[s]
-                flipped_id_head = _tranpose_and_gather_feat(flipped_output['id'], batch['flipped_ind'])
-                flipped_id_head = flipped_id_head[batch['flipped_reg_mask'] > 0].contiguous()
-                flipped_id_head = F.normalize(flipped_id_head)
-
-                flipped_id_target = batch['flipped_ids'][batch['flipped_reg_mask'] > 0]
+                flipped_id_head = extract_feats(flipped_output['id'], batch['flipped_ind'], batch['flipped_reg_mask'])
+                flipped_id_labels = batch['flipped_ids'][batch['flipped_reg_mask'] > 0]
 
                 # Tracks which image in the batch each embedding is from
-                img_labels = []
-                for img_num, obj_cnt in enumerate(batch['num_objs']):
-                    img_labels.extend([img_num] * obj_cnt.item())
-
-                flipped_img_labels = []
-                for img_num, obj_cnt in enumerate(batch['flipped_num_objs']):
-                    flipped_img_labels.extend([img_num] * obj_cnt.item())
-
-                # IMPLEMENT GATHER T-1 FEATURES AND FEED TO LOSS PROPERLY
-                if opt.pre_img:
-                    pass
+                img_labels = create_img_labels(batch['num_objs'])
+                flipped_img_labels = create_img_labels(batch['flipped_num_objs'])
 
                 if opt.off_center_vecs:
-                    off_id_head = _tranpose_and_gather_feat(output['id'], batch['off_ind'])
-                    off_id_head = off_id_head[batch['reg_mask'] > 0].contiguous()
-                    off_id_head = F.normalize(off_id_head)
-
+                    off_id_head = extract_feats(output['id'], batch['off_ind'], batch['reg_mask'])
                     id_head = torch.cat([id_head, off_id_head], dim=0)
-                    id_target = torch.cat([id_target] * 2, dim=0)
+                    id_labels = torch.cat([id_labels] * 2, dim=0)
                     img_labels *= 2
 
-                    off_flipped_id_head = _tranpose_and_gather_feat(flipped_output['id'], batch['flipped_off_ind'])
-                    off_flipped_id_head = off_flipped_id_head[batch['flipped_reg_mask'] > 0].contiguous()
-                    off_flipped_id_head = F.normalize(off_flipped_id_head)
-
+                    off_flipped_id_head = extract_feats(flipped_output['id'], batch['flipped_off_ind'],
+                                                        batch['flipped_reg_mask'])
                     flipped_id_head = torch.cat([flipped_id_head, off_flipped_id_head], dim=0)
-                    flipped_id_target = torch.cat([flipped_id_target] * 2, dim=0)
+                    flipped_id_labels = torch.cat([flipped_id_labels] * 2, dim=0)
                     flipped_img_labels *= 2
+
+                id_head = torch.cat([id_head, flipped_id_head], dim=0)
+                id_labels = torch.cat([id_labels, flipped_id_labels])
+                img_labels = img_labels + flipped_img_labels
+
+                if opt.pre_img and pre_outputs is not None and pre_flipped_outputs is not None:
+                    pre_output = pre_outputs[s]
+                    pre_flipped_output = pre_flipped_outputs[s]
+
+                    pre_id_head = extract_feats(pre_output['id'], batch['pre_ind'], batch['pre_reg_mask'])
+                    pre_id_labels = batch['pre_ids'][batch['pre_reg_mask'] > 0]
+                    pre_img_labels = create_img_labels(batch['pre_num_objs'])
+
+                    pre_flipped_id_head = extract_feats(pre_flipped_output['id'],
+                                                        batch['pre_flipped_ind'], batch['pre_flipped_reg_mask'])
+                    pre_flipped_id_labels = batch['pre_flipped_ids'][batch['pre_flipped_reg_mask'] > 0]
+                    pre_flipped_img_labels = create_img_labels(batch['pre_flipped_num_objs'])
+
+                    if opt.off_center_vecs:
+                        off_pre_id_head = extract_feats(pre_output['id'], batch['pre_off_ind'], batch['pre_reg_mask'])
+                        pre_id_head = torch.cat([pre_id_head, off_pre_id_head], dim=0)
+                        pre_id_labels = torch.cat([pre_id_labels] * 2, dim=0)
+                        pre_img_labels *= 2
+
+                        off_pre_flipped_id_head = extract_feats(pre_flipped_output['id'], batch['pre_flipped_off_ind'],
+                                                                batch['pre_flipped_reg_mask'])
+                        pre_flipped_id_head = torch.cat([pre_flipped_id_head, off_pre_flipped_id_head], dim=0)
+                        pre_flipped_id_labels = torch.cat([pre_flipped_id_labels] * 2, dim=0)
+                        pre_flipped_img_labels *= 2
+
+                    id_head = torch.cat([id_head, pre_id_head, pre_flipped_id_head], dim=0)
+                    id_labels = torch.cat([id_labels, pre_id_labels, pre_flipped_id_labels])
+                    img_labels = img_labels + pre_img_labels + pre_flipped_img_labels
 
                 # Feed embeddings through MLP layer
                 if opt.mlp_layer:
                     id_head = self.MLP(id_head).contiguous()
-                    flipped_id_head = self.MLP(flipped_id_head).contiguous()
 
-                # Compute contrastive loss between both sets of reid features
-                loss_results[opt.unsup_loss] += self.SelfSupLoss(id_head, id_target, img_labels,
-                                                                 flipped_id_head, flipped_id_target, flipped_img_labels)
+                # Compute contrastive loss between reid features
+                loss_results[opt.unsup_loss] += self.SelfSupLoss(id_head, id_labels, img_labels)
 
         # Total supervised loss on detections
         det_loss = opt.hm_weight * loss_results['hm'] + \
