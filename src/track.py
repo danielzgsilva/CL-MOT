@@ -241,8 +241,7 @@ if __name__ == '__main__':
                       ADL-Rundle-6
                       ADL-Rundle-8
                       ETH-Pedcross2
-                      TUD-Stadtmitte
-                      Venice-2'''
+                      TUD-Stadtmitte'''
         data_root = os.path.join(opt.data_dir, 'MOT15/images/train')
     if opt.val_mot20:
         seqs_str = '''MOT20-01
