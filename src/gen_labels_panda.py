@@ -17,8 +17,10 @@ seqs = [s for s in os.listdir(seq_root)]
 tid_curr = 0
 tid_last = -1
 for seq in seqs:
-    print(seq)
     seq_info = json.load(open(osp.join(seq_root, seq, 'seqinfo.json')))
+
+    img_fnames = seq_info['imUrls']
+    img_ext = seq_info['imExt']
     seq_width = int(seq_info['imWidth'])
     seq_height = int(seq_info['imHeight'])
 
@@ -27,23 +29,36 @@ for seq in seqs:
     seq_label_root = osp.join(label_root, seq)
     mkdirs(seq_label_root)
 
-    print(len(tracks))
-    print(tracks[0].keys())
+    for track in tracks:
+        tid = int(track['track id'])
+        frames = track['frames']
 
-    print(seq_width, seq_height)
-
-    '''for fid, tid, x, y, w, h, mark, label, _ in gt:
-        if mark == 0 or not label == 1:
-            continue
-        fid = int(fid)
-        tid = int(tid)
         if not tid == tid_last:
             tid_curr += 1
             tid_last = tid
-        x += w / 2
-        y += h / 2
-        label_fpath = osp.join(seq_label_root, '{:06d}.txt'.format(fid))
-        label_str = '0 {:d} {:.6f} {:.6f} {:.6f} {:.6f}\n'.format(
-            tid_curr, x / seq_width, y / seq_height, w / seq_width, h / seq_height)
-        with open(label_fpath, 'a') as f:
-            f.write(label_str)'''
+
+        for frame in frames:
+            fid = int(frame['frame id'])
+            img_fname = img_fnames[fid - 1]
+
+            bbox = frame['rect']
+
+            tlbr = np.array([bbox['tl']['x'], bbox['tl']['y'], bbox['br']['x'], bbox['br']['y']], dtype=np.float64)
+            print(tlbr)
+
+            # height and width of bbox
+            w = bbox['br']['x'] - bbox['tl']['x']
+            h = bbox['br']['y'] - bbox['tl']['y']
+
+            # x, y center of bbox
+            x = (bbox['br']['x'] + bbox['tl']['x']) / 2
+            y = (bbox['br']['y'] + bbox['tl']['y']) / 2
+
+            print(x, y, w, h)
+            label_fpath = osp.join(seq_label_root, img_fname.replace(img_ext, '.txt'))
+            label_str = '0 {:d} {:.6f} {:.6f} {:.6f} {:.6f}\n'.format(tid_curr, x, y, w, h)
+
+            print(label_fpath)
+
+            # with open(label_fpath, 'a') as f:
+            #    f.write(label_str)
