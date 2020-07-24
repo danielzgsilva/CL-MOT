@@ -5,10 +5,12 @@ from __future__ import print_function
 import _init_paths
 import os
 import os.path as osp
+import json
 import cv2
 import logging
 import argparse
 import motmetrics as mm
+
 import numpy as np
 import torch
 
@@ -86,7 +88,8 @@ def eval_seq(opt, dataloader, data_type, result_filename, save_dir=None, show_im
 
 
 def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), exp_name='demo',
-         save_images=False, save_videos=False, show_image=True):
+         save_images=False, save_videos=False, show_image=True, panda_dataset=False):
+
     logger.setLevel(logging.INFO)
     result_root = os.path.join(data_root, '..', 'results', exp_name)
     mkdir_if_missing(result_root)
@@ -99,11 +102,19 @@ def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), 
     for seq in seqs:
         output_dir = os.path.join(data_root, '..', 'outputs', exp_name, seq) if save_images or save_videos else None
         logger.info('start seq: {}'.format(seq))
-        dataloader = datasets.LoadImages(osp.join(data_root, seq, 'img1'), opt.img_size)
 
-        result_filename = os.path.join(result_root, '{}.txt'.format(seq))
-        meta_info = open(os.path.join(data_root, seq, 'seqinfo.ini')).read()
-        frame_rate = int(meta_info[meta_info.find('frameRate') + 10:meta_info.find('\nseqLength')])
+        if not panda:
+            dataloader = datasets.LoadImages(osp.join(data_root, seq, 'img1'), opt.img_size)
+
+            result_filename = os.path.join(result_root, '{}.txt'.format(seq))
+            meta_info = open(os.path.join(data_root, seq, 'seqinfo.ini')).read()
+            frame_rate = int(meta_info[meta_info.find('frameRate') + 10:meta_info.find('\nseqLength')])
+        else:
+            dataloader = datasets.LoadImages(osp.join(data_root, seq), opt.img_size)
+
+            result_filename = os.path.join(result_root, '{}.txt'.format(seq))
+            meta_info = json.load(open(osp.join(data_root, seq, 'seqinfo.json')))
+            frame_rate = int(meta_info['frameRate'])
 
         nf, ta, tc = eval_seq(opt, dataloader, data_type, result_filename,
                               save_dir=output_dir, show_image=show_image, frame_rate=frame_rate)
@@ -145,6 +156,7 @@ def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), 
 if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     opt = opts().init()
+    panda = False
 
     if not opt.val_mot16:
         seqs_str = '''KITTI-13
@@ -257,10 +269,18 @@ if __name__ == '__main__':
                       MOT20-08
                       '''
         data_root = os.path.join(opt.data_dir, 'MOT20/images/test')
-    seqs = [seq.strip() for seq in seqs_str.split()]
 
-    if opt.exp_id == 'default':
-        opt.exp_id = 'MOT15_val_all_dla34'
+    if opt.test_panda:
+        seqs_str = '''11_Train_Station_Square
+                      12_Nanshan_i_Park
+                      13_University_Playground
+                      14_Ceremony
+                      15_Dongmen_Street
+                      '''
+        panda = True
+        data_root = os.path.join(opt.data_dir, 'PANDA/images/test')
+
+    seqs = [seq.strip() for seq in seqs_str.split()]
 
     main(opt,
          data_root=data_root,
@@ -268,4 +288,5 @@ if __name__ == '__main__':
          exp_name=opt.exp_id,
          show_image=opt.show_image,
          save_images=opt.save_images,
-         save_videos=opt.save_videos)
+         save_videos=opt.save_videos,
+         panda_dataset=panda)

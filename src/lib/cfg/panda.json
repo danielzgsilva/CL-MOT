@@ -1,0 +1,15 @@
+{
+    "root":"/data/MOT/",
+    "train":
+    {
+        "panda":"./data/panda.train"
+    },
+    "test_emb":
+    {
+        "panda":"./data/panda.train"
+    },
+    "test":
+    {
+        "panda":"./data/panda.train"
+    }
+}

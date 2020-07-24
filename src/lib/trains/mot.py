@@ -29,12 +29,12 @@ class MotLoss(torch.nn.Module):
 
         # Loss for offsets
         self.crit_reg = RegL1Loss() if opt.reg_loss == 'l1' else \
-            RegLoss() if opt.reg_loss == 'sl1' else None
+                        RegLoss() if opt.reg_loss == 'sl1' else None
 
         # Loss for object sizes
         self.crit_wh = torch.nn.L1Loss(reduction='sum') if opt.dense_wh else \
-            NormRegL1Loss() if opt.norm_wh else \
-                RegWeightedL1Loss() if opt.cat_spec_wh else self.crit_reg
+                        NormRegL1Loss() if opt.norm_wh else \
+                        RegWeightedL1Loss() if opt.cat_spec_wh else self.crit_reg
 
         # Supervised loss for object IDs
         self.IDLoss = nn.CrossEntropyLoss(ignore_index=-1)
@@ -55,8 +55,8 @@ class MotLoss(torch.nn.Module):
 
         # Self supervised loss for object embeddings
         self.SelfSupLoss = NTXentLoss(opt.device, 0.5) if opt.unsup_loss == 'nt_xent' else \
-            TripletLoss(opt.device, 'batch_all', 0.5) if opt.unsup_loss == 'triplet_all' else \
-                TripletLoss(opt.device, 'batch_hard', 0.5) if opt.unsup_loss == 'triplet_hard' else None
+                            TripletLoss(opt.device, 'batch_all', 0.5) if opt.unsup_loss == 'triplet_all' else \
+                            TripletLoss(opt.device, 'batch_hard', 0.5) if opt.unsup_loss == 'triplet_hard' else None
 
         if opt.unsup and self.SelfSupLoss is None:
             raise ValueError('{} is not a supported self-supervised loss. '.format(opt.unsup_loss) + \
