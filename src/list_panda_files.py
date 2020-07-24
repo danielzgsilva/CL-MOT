@@ -12,6 +12,6 @@ for seq in seqs:
     fnames = os.listdir(os.path.join(seq_root, seq))
 
     for fname in fnames:
-        file_str = os.path.join(panda_root, seq, fname)
+        file_str = sorted(os.path.join(panda_root, seq, fname))
 
         print(file_str)
