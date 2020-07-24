@@ -19,6 +19,6 @@ for seq in seqs:
     for fname in fnames:
         if fname.endswith(img_ext):
             file_str = os.path.join(panda_root, seq, fname)
-            output.write(file_str)
+            output.write(file_str + '\n')
 
 output.close()
