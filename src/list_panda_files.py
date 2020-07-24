@@ -7,20 +7,18 @@ seq_root = os.path.join(data_root, 'MOT', 'PANDA', 'images', 'train')
 
 seqs = [s for s in os.listdir(seq_root)]
 
-output_file = 'panda.train'
+output_filename = 'panda.train'
 
-i = 0
+output = open(os.path.join(data_root, output_filename), 'a')
+
 for seq in seqs:
     fnames = os.listdir(os.path.join(seq_root, seq))
     seq_info = json.load(open(os.path.join(seq_root, seq, 'seqinfo.json')))
     img_ext = seq_info['imExt']
 
     for fname in fnames:
-        file_str = os.path.join(panda_root, seq, fname)
-
         if fname.endswith(img_ext):
-            i += 1
-            print(file_str)
+            file_str = os.path.join(panda_root, seq, fname)
+            output.write(file_str)
 
-
-print(i)
+output.close()
