@@ -286,7 +286,7 @@ class opts(object):
             opt.nID = dataset.nID
 
             if opt.test_panda:
-                opt.img_size = (10880, 6080)
+                opt.img_size = (8704, 4864)
             else:
                 opt.img_size = (1088, 608)
 
