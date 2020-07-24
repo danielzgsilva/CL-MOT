@@ -284,7 +284,11 @@ class opts(object):
                 opt.heads.update({'reg': 2})
 
             opt.nID = dataset.nID
-            opt.img_size = (1088, 608)
+
+            if opt.test_panda:
+                opt.img_size = (26112, 14592)
+            else:
+                opt.img_size = (1088, 608)
 
         else:
             assert 0, 'task not defined!'
