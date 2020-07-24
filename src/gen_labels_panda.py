@@ -44,7 +44,6 @@ for seq in seqs:
             bbox = frame['rect']
 
             tlbr = np.array([bbox['tl']['x'], bbox['tl']['y'], bbox['br']['x'], bbox['br']['y']], dtype=np.float64)
-            print(tlbr)
 
             # height and width of bbox
             w = bbox['br']['x'] - bbox['tl']['x']
@@ -54,11 +53,8 @@ for seq in seqs:
             x = (bbox['br']['x'] + bbox['tl']['x']) / 2
             y = (bbox['br']['y'] + bbox['tl']['y']) / 2
 
-            print(x, y, w, h)
             label_fpath = osp.join(seq_label_root, img_fname.replace(img_ext, '.txt'))
             label_str = '0 {:d} {:.6f} {:.6f} {:.6f} {:.6f}\n'.format(tid_curr, x, y, w, h)
 
-            print(label_fpath)
-
-            # with open(label_fpath, 'a') as f:
-            #    f.write(label_str)
+            with open(label_fpath, 'a') as f:
+                f.write(label_str)
