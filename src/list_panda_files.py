@@ -1,4 +1,5 @@
 import os
+import json
 
 panda_root = 'PANDA/images/train/'
 data_root = os.path.join(os.getcwd(), 'data')
@@ -10,8 +11,11 @@ output_file = 'panda.train'
 
 for seq in seqs:
     fnames = os.listdir(os.path.join(seq_root, seq))
+    seq_info = json.load(open(os.path.join(seq_root, seq, 'seqinfo.json')))
+    img_ext = seq_info['imExt']
 
     for fname in fnames:
         file_str = os.path.join(panda_root, seq, fname)
 
-        print(file_str)
+        if fname.endswith(img_ext):
+            print(file_str)
