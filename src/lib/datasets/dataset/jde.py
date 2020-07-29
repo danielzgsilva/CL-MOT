@@ -199,9 +199,15 @@ class LoadImagesAndLabels:  # for training
         # Load image and labels
         images['orig'] = self.load_image(img_path)
         labels['orig'] = self.load_labels(label_path, unsup)
+
+        # Random horizontal flip
+        if self.augment and random.random() > 0.5:
+            images['orig'] = cv2.flip(images['orig'], 1)
+            labels['orig'] = self.flip_labels(labels['orig'])
+
         orig_h, orig_w, _ = images['orig'].shape
 
-        # create augmented samples for contrastive learning
+        # create flipped sample for contrastive learning
         if unsup:
             images['flipped'] = cv2.flip(images['orig'], 1)
             labels['flipped'] = self.flip_labels(labels['orig'])
@@ -296,13 +302,6 @@ class LoadImagesAndLabels:  # for training
                 lbls[:, 3] /= height
                 lbls[:, 4] /= width
                 lbls[:, 5] /= height
-
-            if not unsup and self.augment:
-                # random left-right flip during supervised learning
-                if random.random() > 0.5:
-                    img = np.fliplr(img)
-                    if num_objs > 0:
-                        lbls[:, 2] = 1 - lbls[:, 2]
 
             img = np.ascontiguousarray(img[:, :, ::-1])  # BGR to RGB
 
