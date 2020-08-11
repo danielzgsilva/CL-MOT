@@ -1,4 +1,4 @@
 # CL-MOT
-A self-supervised learning approach for Multi Object Tracking via Contrastive Learning
+A Self-supervised approach for Multi Object Tracking with Contrastive Learning
 
 
