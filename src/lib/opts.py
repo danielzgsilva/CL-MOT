@@ -80,7 +80,7 @@ class opts(object):
         self.parser.add_argument('--arch', default='dla_34',
                                  help='model architecture'
                                       'resdcn_34 | resdcn_50 | resfpndcn_34 |'
-                                      'dla_34 | hrnet_32')
+                                      'dla_34 | hrnet_32 | efficientdet')
         self.parser.add_argument('--head_conv', type=int, default=-1,
                                  help='conv layer channels for output head'
                                       '0 for no conv layer'
@@ -88,7 +88,8 @@ class opts(object):
                                       '256 for resnets and 256 for dla.')
         self.parser.add_argument('--down_ratio', type=int, default=4,
                                  help='output stride. Currently only supports 4.')
-        self.parser.add_argument('--dla_node', default='dcn')
+        self.parser.add_argument('--dla_node', default='dcn',
+                                 choices=['dcn', 'conv', 'gcn'])
 
         # input
         self.parser.add_argument('--input_res', type=int, default=-1,

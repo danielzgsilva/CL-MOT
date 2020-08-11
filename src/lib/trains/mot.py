@@ -116,9 +116,11 @@ class MotLoss(torch.nn.Module):
             if opt.unsup and flipped_outputs is not None:
                 flipped_output = flipped_outputs[s]
                 flipped_id_head = extract_feats(flipped_output['id'], batch['flipped_ind'], batch['flipped_reg_mask'])
+
+                # Local object identities 1...N for N objects in the current scene
                 flipped_id_labels = batch['flipped_ids'][batch['flipped_reg_mask'] > 0]
 
-                # Tracks which image in the batch each embedding is from
+                # Track which image in the batch each embedding is from
                 img_labels = create_img_labels(batch['num_objs'])
                 flipped_img_labels = create_img_labels(batch['flipped_num_objs'])
 

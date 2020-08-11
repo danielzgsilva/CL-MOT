@@ -296,6 +296,7 @@ class NTXentLoss(torch.nn.Module):
         return v
 
     def forward(self, zis, i_targets, zjs, j_targets):
+        embeddings, id_labels, img_labels
 
         # NEED TO FIX THIS LOSS SO IT WORKS WHEN FLIPPED IMAGE HAS DIFFERENT NUMBER OF OBJECTS THAN ORIGINAL
         assert zis.size(0) == zjs.size(0)
@@ -437,7 +438,7 @@ class TripletLoss(nn.Module):
         """Return a 2D mask where mask[a, n] is True iff a and n have distinct labels
            and were retrieved from the same image in the batch.
         Args:
-            labels: tf.int32 `Tensor` with shape [batch_size]
+            labels: tensor with shape [batch_size]
             img_labels: tensor with shape [batch_size]
         Returns:
             mask: tf.bool `Tensor` with shape [batch_size, batch_size]
@@ -492,6 +493,7 @@ class TripletLoss(nn.Module):
         # Combine biggest d(a, p) and smallest d(a, n) into final triplet loss
         tl = hardest_positive_dist - hardest_negative_dist + self.margin
         tl[tl < 0] = 0
+
         triplet_loss = tl.mean()
 
         return triplet_loss
@@ -523,6 +525,7 @@ class TripletLoss(nn.Module):
 
         # Put to zero the invalid triplets
         mask = self._get_triplet_mask(labels, img_labels)
+        print(mask.sum())
         triplet_loss = mask.float() * triplet_loss
 
         # Remove negative losses (i.e. the easy triplets)
@@ -542,6 +545,144 @@ class TripletLoss(nn.Module):
 
         assert embeddings.size(0) == id_labels.size(0) == img_labels.size(0)
 
+        print(embeddings.size())
+        print(id_labels)
+        print(img_labels)
         return self.loss(embeddings, id_labels, img_labels)
+
+
+class newNTXentLoss(nn.Module):
+    def __init__(self, device, temperature, use_cosine_sim=True):
+        super(newNTXentLoss, self).__init__()
+        self.device = device
+        self.temperature = temperature
+
+        self.similarity_function = self._get_similarity_function(use_cosine_sim)
+
+    def _get_similarity_function(self, use_cosine_similarity):
+        if use_cosine_similarity:
+            self._cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
+            return self._cosine_simililarity
+        else:
+            return self._dot_simililarity
+
+    @staticmethod
+    def _dot_simililarity(x, y):
+        v = torch.tensordot(x.unsqueeze(1), y.T.unsqueeze(0), dims=2)
+        # x shape: (N, 1, C)
+        # y shape: (1, C, 2N)
+        # v shape: (N, 2N)
+        return v
+
+    def _cosine_simililarity(self, x, y):
+        # x shape: (N, 1, C)
+        # y shape: (1, 2N, C)
+        # v shape: (N, 2N)
+        v = self._cosine_similarity(x.unsqueeze(1), y.unsqueeze(0))
+        return v
+
+    def _get_positive_pair_mask(self, labels, img_labels):
+        """Return a 2D mask where mask[a, p] is True iff a and p are distinct, have the same label,
+           and were retrieved from the same image in the batch.
+        Args:
+            labels: tensor with shape [batch_size]
+            img_labels: tensor with shape [batch_size]
+        Returns:
+            mask: tensor with shape [batch_size, batch_size]
+        """
+
+        # Check that i and j are distinct
+        indices_not_equal = ~(torch.eye(labels.size(0)).bool().to(self.device))
+
+        # Check if labels[i] == labels[j]
+        # Uses broadcasting where the 1st argument has shape (1, batch_size) and the 2nd (batch_size, 1)
+        labels_equal = labels.unsqueeze(0) == labels.unsqueeze(1)
+
+        # Check if img_labels[i] == img_labels[j]
+        images_equal = img_labels.unsqueeze(0) == img_labels.unsqueeze(1)
+
+        return labels_equal & images_equal & indices_not_equal
+
+    def _get_negative_pair_mask(self, labels, img_labels):
+        """Return a 2D mask where mask[a, n] is True iff a and n have distinct labels
+           and were retrieved from the same image in the batch.
+        Args:
+            labels: tensor with shape [batch_size]
+            img_labels: tensor with shape [batch_size]
+        Returns:
+            mask: tf.bool `Tensor` with shape [batch_size, batch_size]
+        """
+
+        # Check if labels[i] != labels[k]
+        # Uses broadcasting where the 1st argument has shape (1, batch_size) and the 2nd (batch_size, 1)
+        labels_not_equal = ~(labels.unsqueeze(0) == labels.unsqueeze(1))
+
+        # Check if img_labels[i] == img_labels[j]
+        images_equal = img_labels.unsqueeze(0) == img_labels.unsqueeze(1)
+
+        return labels_not_equal & images_equal
+
+    def get_all_pairs_indices(self, id_labels, img_labels):
+        """
+        Given a tensor of labels, this will return 4 tensors.
+        The first 2 tensors are the indices which form all positive pairs
+        The second 2 tensors are the indices which form all negative pairs
+        """
+        ref_labels = id_labels
+        labels1 = id_labels.unsqueeze(1)
+        labels2 = ref_labels.unsqueeze(0)
+        matches = (labels1 == labels2).byte()
+        diffs = matches ^ 1
+        if ref_labels is id_labels:
+            matches.fill_diagonal_(0)
+        a1_idx, p_idx = torch.where(matches)
+        a2_idx, n_idx = torch.where(diffs)
+        return a1_idx, p_idx, a2_idx, n_idx
+
+    def forward(self, embeddings, id_labels, img_labels):
+        img_labels = torch.tensor(img_labels).to(self.device)
+        assert embeddings.size(0) == id_labels.size(0) == img_labels.size(0)
+
+        # Find positive and negative pairs across all embeddings in the batch
+        a1, p, a2, n = self.get_all_pairs_indices(id_labels, img_labels)
+
+        pos_mask = self._get_positive_pair_mask(id_labels, img_labels).float()
+        neg_mask = self._get_negative_pair_mask(id_labels, img_labels).float()
+
+        print(torch.nonzero(pos_mask))
+        print(torch.nonzero(neg_mask))
+
+        a1 = torch.nonzero(pos_mask)[:, 0]
+        a2 = torch.nonzero(neg_mask)[:, 0]
+
+        sim_mat = self.similarity_function(embeddings, embeddings)
+        assert sim_mat.size() == torch.Size((embeddings.size(0), embeddings.size(0)))
+
+        pos_pairs = sim_mat * pos_mask
+        neg_pairs = sim_mat * neg_mask
+
+        pos_pairs = pos_pairs[pos_pairs > 0]
+        neg_pairs = neg_pairs[neg_pairs > 0]
+
+        dtype = neg_pairs.dtype
+
+        if len(pos_pairs) > 0 and len(pos_pairs) > 0:
+            pos_pairs = pos_pairs.unsqueeze(1) / self.temperature
+            neg_pairs = neg_pairs / self.temperature
+            n_per_p = (a2.unsqueeze(0) == a1.unsqueeze(1)).type(dtype)
+
+            print(n_per_p.int())
+
+            neg_pairs = neg_pairs * n_per_p
+            neg_pairs[n_per_p == 0] = torch.finfo(dtype).min
+
+            max_val = torch.max(pos_pairs, torch.max(neg_pairs, dim=1, keepdim=True)[0])
+            numerator = torch.exp(pos_pairs - max_val).squeeze(1)
+            denominator = torch.sum(torch.exp(neg_pairs - max_val), dim=1) + numerator
+            log_exp = torch.log((numerator / denominator) + torch.finfo(dtype).tiny)
+
+            return log_exp
+
+
 
 

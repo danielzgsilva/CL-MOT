@@ -1,4 +1,4 @@
-# Author: Zylo117
+# From: https://github.com/zylo117/Yet-Another-EfficientDet-Pytorch/
 
 import math
 
