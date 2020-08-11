@@ -253,76 +253,6 @@ def compute_rot_loss(output, target_bin, target_res, mask):
     return loss_bin1 + loss_bin2 + loss_res
 
 
-class NTXentLoss(torch.nn.Module):
-
-    def __init__(self, device, temperature, use_cosine_similarity=True):
-        super(NTXentLoss, self).__init__()
-        self.num_objects = 0
-        self.temperature = temperature
-        self.device = device
-        self.softmax = torch.nn.Softmax(dim=-1)
-        self.mask_samples_from_same_repr = self._get_correlated_mask().type(torch.bool)
-        self.similarity_function = self._get_similarity_function(use_cosine_similarity)
-        self.criterion = torch.nn.CrossEntropyLoss(reduction="sum")
-
-    def _get_similarity_function(self, use_cosine_similarity):
-        if use_cosine_similarity:
-            self._cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
-            return self._cosine_simililarity
-        else:
-            return self._dot_simililarity
-
-    def _get_correlated_mask(self):
-        diag = np.eye(2 * self.num_objects)
-        l1 = np.eye((2 * self.num_objects), 2 * self.num_objects, k=-self.num_objects)
-        l2 = np.eye((2 * self.num_objects), 2 * self.num_objects, k=self.num_objects)
-        mask = torch.from_numpy((diag + l1 + l2))
-        mask = (1 - mask).type(torch.bool)
-        return mask.to(self.device)
-
-    @staticmethod
-    def _dot_simililarity(x, y):
-        v = torch.tensordot(x.unsqueeze(1), y.T.unsqueeze(0), dims=2)
-        # x shape: (N, 1, C)
-        # y shape: (1, C, 2N)
-        # v shape: (N, 2N)
-        return v
-
-    def _cosine_simililarity(self, x, y):
-        # x shape: (N, 1, C)
-        # y shape: (1, 2N, C)
-        # v shape: (N, 2N)
-        v = self._cosine_similarity(x.unsqueeze(1), y.unsqueeze(0))
-        return v
-
-    def forward(self, zis, i_targets, zjs, j_targets):
-        embeddings, id_labels, img_labels
-
-        # NEED TO FIX THIS LOSS SO IT WORKS WHEN FLIPPED IMAGE HAS DIFFERENT NUMBER OF OBJECTS THAN ORIGINAL
-        assert zis.size(0) == zjs.size(0)
-
-        self.num_objects = zjs.size(0)
-
-        embeddings = torch.cat([zjs, zis], dim=0)
-        similarity_matrix = self.similarity_function(embeddings, embeddings)
-
-        # filter out the scores from the positive samples
-        l_pos = torch.diag(similarity_matrix, self.num_objects)
-        r_pos = torch.diag(similarity_matrix, -self.num_objects)
-        positives = torch.cat([l_pos, r_pos]).view(2 * self.num_objects, 1)
-
-        mask_samples_from_same_repr = self._get_correlated_mask().type(torch.bool)
-        negatives = similarity_matrix[mask_samples_from_same_repr].view(2 * self.num_objects, -1)
-
-        logits = torch.cat((positives, negatives), dim=1)
-        logits /= self.temperature
-
-        labels = torch.zeros(2 * self.num_objects).to(self.device).long()
-        loss = self.criterion(logits, labels)
-
-        return loss / (2 * self.num_objects)
-
-
 class TripletLoss(nn.Module):
     """Triplet loss with batch hard or batch all mining.
         Args:
@@ -551,12 +481,11 @@ class TripletLoss(nn.Module):
         return self.loss(embeddings, id_labels, img_labels)
 
 
-class newNTXentLoss(nn.Module):
+class NTXentLoss(nn.Module):
     def __init__(self, device, temperature, use_cosine_sim=True):
-        super(newNTXentLoss, self).__init__()
+        super(NTXentLoss, self).__init__()
         self.device = device
         self.temperature = temperature
-
         self.similarity_function = self._get_similarity_function(use_cosine_sim)
 
     def _get_similarity_function(self, use_cosine_similarity):
@@ -581,7 +510,7 @@ class newNTXentLoss(nn.Module):
         v = self._cosine_similarity(x.unsqueeze(1), y.unsqueeze(0))
         return v
 
-    def _get_positive_pair_mask(self, labels, img_labels):
+    def get_positive_pair_mask(self, labels, img_labels):
         """Return a 2D mask where mask[a, p] is True iff a and p are distinct, have the same label,
            and were retrieved from the same image in the batch.
         Args:
@@ -603,7 +532,7 @@ class newNTXentLoss(nn.Module):
 
         return labels_equal & images_equal & indices_not_equal
 
-    def _get_negative_pair_mask(self, labels, img_labels):
+    def get_negative_pair_mask(self, labels, img_labels):
         """Return a 2D mask where mask[a, n] is True iff a and n have distinct labels
            and were retrieved from the same image in the batch.
         Args:
@@ -622,56 +551,32 @@ class newNTXentLoss(nn.Module):
 
         return labels_not_equal & images_equal
 
-    def get_all_pairs_indices(self, id_labels, img_labels):
-        """
-        Given a tensor of labels, this will return 4 tensors.
-        The first 2 tensors are the indices which form all positive pairs
-        The second 2 tensors are the indices which form all negative pairs
-        """
-        ref_labels = id_labels
-        labels1 = id_labels.unsqueeze(1)
-        labels2 = ref_labels.unsqueeze(0)
-        matches = (labels1 == labels2).byte()
-        diffs = matches ^ 1
-        if ref_labels is id_labels:
-            matches.fill_diagonal_(0)
-        a1_idx, p_idx = torch.where(matches)
-        a2_idx, n_idx = torch.where(diffs)
-        return a1_idx, p_idx, a2_idx, n_idx
-
     def forward(self, embeddings, id_labels, img_labels):
-        img_labels = torch.tensor(img_labels).to(self.device)
+        img_labels = torch.as_tensor(img_labels).to(self.device)
         assert embeddings.size(0) == id_labels.size(0) == img_labels.size(0)
 
-        # Find positive and negative pairs across all embeddings in the batch
-        a1, p, a2, n = self.get_all_pairs_indices(id_labels, img_labels)
+        pos_mask = self.get_positive_pair_mask(id_labels, img_labels).float()
+        neg_mask = self.get_negative_pair_mask(id_labels, img_labels).float()
 
-        pos_mask = self._get_positive_pair_mask(id_labels, img_labels).float()
-        neg_mask = self._get_negative_pair_mask(id_labels, img_labels).float()
-
-        print(torch.nonzero(pos_mask))
-        print(torch.nonzero(neg_mask))
-
-        a1 = torch.nonzero(pos_mask)[:, 0]
-        a2 = torch.nonzero(neg_mask)[:, 0]
+        pos_pair_anchors = torch.nonzero(pos_mask, as_tuple=False)[:, 0]
+        neg_pair_anchors = torch.nonzero(neg_mask, as_tuple=False)[:, 0]
 
         sim_mat = self.similarity_function(embeddings, embeddings)
         assert sim_mat.size() == torch.Size((embeddings.size(0), embeddings.size(0)))
 
-        pos_pairs = sim_mat * pos_mask
-        neg_pairs = sim_mat * neg_mask
+        positives = sim_mat * pos_mask
+        negatives = sim_mat * neg_mask
 
-        pos_pairs = pos_pairs[pos_pairs > 0]
-        neg_pairs = neg_pairs[neg_pairs > 0]
+        positives = positives[positives > 0]
+        negatives = negatives[negatives > 0]
 
-        dtype = neg_pairs.dtype
+        dtype = negatives.dtype
 
-        if len(pos_pairs) > 0 and len(pos_pairs) > 0:
-            pos_pairs = pos_pairs.unsqueeze(1) / self.temperature
-            neg_pairs = neg_pairs / self.temperature
-            n_per_p = (a2.unsqueeze(0) == a1.unsqueeze(1)).type(dtype)
-
-            print(n_per_p.int())
+        # github.com/KevinMusgrave/pytorch-metric-learning/losses/ntxent_loss.py
+        if len(positives) > 0 and len(positives) > 0:
+            pos_pairs = positives.unsqueeze(1) / self.temperature
+            neg_pairs = negatives / self.temperature
+            n_per_p = (neg_pair_anchors.unsqueeze(0) == pos_pair_anchors.unsqueeze(1)).type(dtype)
 
             neg_pairs = neg_pairs * n_per_p
             neg_pairs[n_per_p == 0] = torch.finfo(dtype).min
@@ -681,7 +586,8 @@ class newNTXentLoss(nn.Module):
             denominator = torch.sum(torch.exp(neg_pairs - max_val), dim=1) + numerator
             log_exp = torch.log((numerator / denominator) + torch.finfo(dtype).tiny)
 
-            return log_exp
+            return -1 * log_exp.mean()
+
 
 
 
