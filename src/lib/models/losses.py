@@ -455,7 +455,6 @@ class TripletLoss(nn.Module):
 
         # Put to zero the invalid triplets
         mask = self._get_triplet_mask(labels, img_labels)
-        print(mask.sum())
         triplet_loss = mask.float() * triplet_loss
 
         # Remove negative losses (i.e. the easy triplets)
@@ -475,9 +474,6 @@ class TripletLoss(nn.Module):
 
         assert embeddings.size(0) == id_labels.size(0) == img_labels.size(0)
 
-        print(embeddings.size())
-        print(id_labels)
-        print(img_labels)
         return self.loss(embeddings, id_labels, img_labels)
 
 
@@ -573,20 +569,22 @@ class NTXentLoss(nn.Module):
         dtype = negatives.dtype
 
         # github.com/KevinMusgrave/pytorch-metric-learning/losses/ntxent_loss.py
-        if len(positives) > 0 and len(positives) > 0:
-            pos_pairs = positives.unsqueeze(1) / self.temperature
-            neg_pairs = negatives / self.temperature
+        if len(positives) > 0 and len(negatives) > 0:
+            positives = positives.unsqueeze(1) / self.temperature
+            negatives = negatives / self.temperature
             n_per_p = (neg_pair_anchors.unsqueeze(0) == pos_pair_anchors.unsqueeze(1)).type(dtype)
 
-            neg_pairs = neg_pairs * n_per_p
-            neg_pairs[n_per_p == 0] = torch.finfo(dtype).min
+            negatives = negatives * n_per_p
+            negatives[n_per_p == 0] = torch.finfo(dtype).min
 
-            max_val = torch.max(pos_pairs, torch.max(neg_pairs, dim=1, keepdim=True)[0])
-            numerator = torch.exp(pos_pairs - max_val).squeeze(1)
-            denominator = torch.sum(torch.exp(neg_pairs - max_val), dim=1) + numerator
+            max_val = torch.max(positives, torch.max(negatives, dim=1, keepdim=True)[0])
+            numerator = torch.exp(positives - max_val).squeeze(1)
+            denominator = torch.sum(torch.exp(negatives - max_val), dim=1) + numerator
             log_exp = torch.log((numerator / denominator) + torch.finfo(dtype).tiny)
 
             return -1 * log_exp.mean()
+
+        return torch.zeros(1).to(self.device)
 
 
 
