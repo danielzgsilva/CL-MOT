@@ -477,11 +477,11 @@ DLA_NODE = {
 
 class DLASeg(nn.Module):
     def __init__(self, base_name, heads, pretrained, down_ratio, final_kernel,
-                 last_level, head_conv, out_channel=0):
+                 last_level, head_conv, out_channel=0, node_type='dcn'):
         super(DLASeg, self).__init__()
         assert down_ratio in [2, 4, 8, 16]
 
-        self.node_type = DLA_NODE['dcn']
+        self.node_type = DLA_NODE[node_type]
 
         self.first_level = int(np.log2(down_ratio))
         self.last_level = last_level
@@ -536,11 +536,12 @@ class DLASeg(nn.Module):
         return [z]
 
 
-def get_pose_net(num_layers, heads, head_conv=256, down_ratio=4):
+def get_pose_net(opt, num_layers, heads, head_conv=256, down_ratio=4):
     model = DLASeg('dla{}'.format(num_layers), heads,
                    pretrained=True,
                    down_ratio=down_ratio,
                    final_kernel=1,
                    last_level=5,
-                   head_conv=head_conv)
+                   head_conv=head_conv,
+                   node_type=opt.dla_node)
     return model

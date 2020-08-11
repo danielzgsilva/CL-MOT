@@ -536,7 +536,7 @@ def fill_fc_weights(layers):
                 nn.init.constant_(m.bias, 0)
 
 
-def get_pose_net(num_layers, heads, head_conv):
+def get_pose_net(opt, num_layers, heads, head_conv):
     if num_layers == 32:
         cfg_dir = '../src/lib/models/networks/config/hrnet_w32.yaml'
     elif num_layers == 18:
