@@ -43,7 +43,7 @@ def test_emb(
     else:
         opt.device = torch.device('cpu')
     print('Creating model...')
-    model = create_model(opt.arch, opt.heads, opt.head_conv)
+    model = create_model(opt.arch, opt.heads, opt.head_conv, opt)
     model = load_model(model, opt.load_model)
     # model = torch.nn.DataParallel(model)
     model = model.to(opt.device)
