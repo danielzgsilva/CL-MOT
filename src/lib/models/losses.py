@@ -554,20 +554,17 @@ class NTXentLoss(nn.Module):
         pos_mask = self.get_positive_pair_mask(id_labels, img_labels).float()
         neg_mask = self.get_negative_pair_mask(id_labels, img_labels).float()
 
-        pos_pair_anchors = torch.nonzero(pos_mask, as_tuple=False)[:, 0]
-        neg_pair_anchors = torch.nonzero(neg_mask, as_tuple=False)[:, 0]
+        pos_pairs = torch.nonzero(pos_mask, as_tuple=False)
+        neg_pairs = torch.nonzero(neg_mask, as_tuple=False)
+
+        pos_pair_anchors = pos_pairs[:, 0]
+        neg_pair_anchors = neg_pairs[:, 0]
 
         sim_mat = self.similarity_function(embeddings, embeddings)
         assert sim_mat.size() == torch.Size((embeddings.size(0), embeddings.size(0)))
 
         positives = sim_mat * pos_mask
         negatives = sim_mat * neg_mask
-
-        temp = positives
-        temp2 = negatives
-
-        negs = positives[positives < 0]
-        negs2 = negatives[negatives < 0]
 
         positives = positives[positives != 0.0]
         negatives = negatives[negatives != 0.0]
@@ -579,22 +576,7 @@ class NTXentLoss(nn.Module):
             negatives = negatives / self.temperature
             n_per_p = (neg_pair_anchors.unsqueeze(0) == pos_pair_anchors.unsqueeze(1)).type(dtype)
 
-            try:
-                negatives = negatives * n_per_p
-            except:
-                print(id_labels, 'id len ', len(id_labels))
-                print(img_labels, 'img label len ', len(id_labels))
-                print('pos anchors ', torch.nonzero(pos_mask, as_tuple=False).size())
-                print('neg anchors ', torch.nonzero(neg_mask, as_tuple=False).size())
-                print('test pos ', torch.nonzero(temp, as_tuple=False).size())
-                print('test neg ', torch.nonzero(temp2, as_tuple=False).size())
-                print('maybe pos ', negs.size())
-                print('maybe neg ', negs2.size())
-                print('pos ', positives.size())
-                print('neg ', negatives.size())
-                print('negatives: ', negs2)
-                print('n_per_p ', n_per_p.size())
-
+            negatives = negatives * n_per_p
             negatives[n_per_p == 0] = torch.finfo(dtype).min
 
             max_val = torch.max(positives, torch.max(negatives, dim=1, keepdim=True)[0])
