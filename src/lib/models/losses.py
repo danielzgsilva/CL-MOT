@@ -583,10 +583,9 @@ class NTXentLoss(nn.Module):
             numerator = torch.exp(positives - max_val).squeeze(1)
             denominator = torch.sum(torch.exp(negatives - max_val), dim=1) + numerator
             log_exp = torch.log((numerator / denominator) + torch.finfo(dtype).tiny)
-
             return -1 * log_exp.mean()
 
-        return torch.zeros(1).to(self.device)
+        return torch.tensor(0).float().to(self.device)
 
 
 
