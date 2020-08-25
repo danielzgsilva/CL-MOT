@@ -54,9 +54,9 @@ class MotLoss(torch.nn.Module):
                 param.requires_grad = False
 
         # Self supervised loss for object embeddings
-        self.SelfSupLoss = NTXentLoss(opt.device, 0.5) if opt.unsup_loss == 'nt_xent' else \
-                            TripletLoss(opt.device, 'batch_all', 0.5) if opt.unsup_loss == 'triplet_all' else \
-                            TripletLoss(opt.device, 'batch_hard', 0.5) if opt.unsup_loss == 'triplet_hard' else None
+        self.SelfSupLoss = NTXentLoss(opt.device, opt.temp) if opt.unsup_loss == 'nt_xent' else \
+                            TripletLoss(opt.device, 'batch_all', opt.margin) if opt.unsup_loss == 'triplet_all' else \
+                            TripletLoss(opt.device, 'batch_hard', opt.margin) if opt.unsup_loss == 'triplet_hard' else None
 
         if opt.unsup and self.SelfSupLoss is None:
             raise ValueError('{} is not a supported self-supervised loss. '.format(opt.unsup_loss) + \

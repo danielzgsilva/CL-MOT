@@ -199,6 +199,10 @@ class opts(object):
                                  choices=['nt_xent', 'triplet_all', 'triplet_hard'])
         self.parser.add_argument('--unsup_weight', type=float, default=1,
                                  help='weight for self-supervised loss on embeddings')
+        self.parser.add_argument('--temp', type=float, default=0.5,
+                                 help='temperature parameter for the NT-Xent loss')
+        self.parser.add_argument('--margin', type=float, default=0.5,
+                                 help='margin term for triplet loss')
 
         self.parser.add_argument('--norm_wh', action='store_true',
                                  help='L1(\hat(y) / y, 1) or L1(\hat(y), y)')
