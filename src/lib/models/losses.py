@@ -551,8 +551,9 @@ class NTXentLoss(nn.Module):
         img_labels = torch.as_tensor(img_labels).to(self.device)
         assert embeddings.size(0) == id_labels.size(0) == img_labels.size(0)
 
-        pos_mask = self.get_positive_pair_mask(id_labels, img_labels).float()
-        neg_mask = self.get_negative_pair_mask(id_labels, img_labels).float()
+        # Find indices of positive and negative pairs
+        pos_mask = self.get_positive_pair_mask(id_labels, img_labels).bool()
+        neg_mask = self.get_negative_pair_mask(id_labels, img_labels).bool()
 
         pos_pairs = torch.nonzero(pos_mask, as_tuple=False)
         neg_pairs = torch.nonzero(neg_mask, as_tuple=False)
@@ -560,17 +561,17 @@ class NTXentLoss(nn.Module):
         pos_pair_anchors = pos_pairs[:, 0]
         neg_pair_anchors = neg_pairs[:, 0]
 
+        # Compute affinity matrix
         sim_mat = self.similarity_function(embeddings, embeddings)
         assert sim_mat.size() == torch.Size((embeddings.size(0), embeddings.size(0)))
 
-        positives = sim_mat * pos_mask
-        negatives = sim_mat * neg_mask
-
-        positives = positives[positives != 0.0]
-        negatives = negatives[negatives != 0.0]
+        # Extract positive and negative affinities
+        positives = sim_mat[pos_mask]
+        negatives = sim_mat[neg_mask]
 
         dtype = negatives.dtype
 
+        # Compute loss
         if len(positives) > 0 and len(negatives) > 0:
             positives = positives.unsqueeze(1) / self.temperature
             negatives = negatives / self.temperature
