@@ -7,7 +7,7 @@
 ![CL-MOT Training pipeline](assets/training_cycle.png?raw=true "Title")
 
 <figure class="image">
-  <img src="{{ assets/training_cycle.png }}" alt="{{ CL-MOT training pipeline }}">
+  <img src="{{ https://github.com/danielzgsilva/CL-MOT/blob/master/assets/training_cycle.png }}" alt="{{ CL-MOT training pipeline }}">
   <figcaption>{{ By clustering object embeddings from contrastive views of a static frame, CL-MOT learns to discriminate between objects in a scene without relying on identity label }}</figcaption>
 </figure>
 
