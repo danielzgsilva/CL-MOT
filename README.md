@@ -1,5 +1,5 @@
 # CL-MOT
-**A contrastive learning framework for multi-object tracking** 
+### A contrastive learning framework for multi-object tracking
 - CL-MOT enables one to train an appearance-based tracker on static images with only bounding box labels
 - We do **not** require object identity or association labels, which significantly reducing the annotation demands of tracking
 - Our results match the performance of supervised trackers and significantly outperforms other self-supervised methods
