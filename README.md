@@ -33,5 +33,5 @@ Our results are gathered from the  [MOT Challenge](https://motchallenge.net/) on
 ### Testing
 
 ## Acknowledgement
-This work leverages and builds upon the work from [ifzhang/FairMOT](https://github.com/ifzhang/FairMOT), [Zhongdao/Towards-Realtime-MOT](https://github.com/Zhongdao/Towards-Realtime-MOT), [xingyizhou/CenterNet](https://github.com/xingyizhou/CenterTrack). We also use [py-motmetrics](https://github.com/cheind/py-motmetrics) for tracking evaluation and the deformable convolutions implementation from [DCNv2](https://github.com/CharlesShang/DCNv2).
+CL-MOT builds strongly upon the work from [ifzhang/FairMOT](https://github.com/ifzhang/FairMOT), [Zhongdao/Towards-Realtime-MOT](https://github.com/Zhongdao/Towards-Realtime-MOT), and [xingyizhou/CenterNet](https://github.om/xingyizhou/CenterTrack). We also use [py-motmetrics](https://github.com/cheind/py-motmetrics) for tracking evaluation and the [DCNv2](https://github.com/CharlesShang/DCNv2). deformable convolution implementation. Thank you for their great work!
 
