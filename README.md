@@ -4,8 +4,6 @@
 - We do **not** require object identity or association labels, which significantly reducing the annotation demands of tracking
 - Our results match the performance of supervised trackers and significantly outperforms other self-supervised methods
 
-![CL-MOT Training pipeline](assets/training_cycle.png?raw=true "CL-MOT training pipeline")
-
 <div style="text-align:center"><img src="https://github.com/danielzgsilva/CL-MOT/blob/master/assets/training_cycle.png" />By clustering object embeddings from contrastive views of a static frame, CL-MOT learns to discriminate between objects in a scene without relying on identity labels.</div>
 
 ## Abstract
